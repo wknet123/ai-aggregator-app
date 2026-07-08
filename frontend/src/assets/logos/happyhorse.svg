@@ -1,0 +1,13 @@
+<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="HappyHorse">
+  <defs>
+    <linearGradient id="hhGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ec4899"/>
+      <stop offset="1" stop-color="#f472b6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#hhGrad)"/>
+  <path d="M20 45 L20 19" stroke="#fff" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M44 45 L44 19" stroke="#fff" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M20 32 L44 32" stroke="#fff" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M44 19 C50 21 50 27 46 30" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none"/>
+</svg>

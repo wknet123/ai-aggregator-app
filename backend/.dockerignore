@@ -1,0 +1,30 @@
+# Keep secrets & local-dev env out of the image.
+# All effective config is injected at runtime from deploy/.env via docker-compose.
+.env
+.env.*
+!.env.example
+
+# Python caches / build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Local runtime storage (bind-mounted in compose, never baked)
+storage/
+
+# Backups & editor/OS cruft
+*.bak
+*.bak-*
+**/app.bak-*/
+**/src.bak-*/
+.DS_Store
+.idea/
+.vscode/
+*.swp

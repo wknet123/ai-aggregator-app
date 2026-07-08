@@ -1,0 +1,10 @@
+<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Wan">
+  <defs>
+    <linearGradient id="wanGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#wanGrad)"/>
+  <path d="M15 21 L23 43 L32 27 L41 43 L49 21" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

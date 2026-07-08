@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* 关键修复点 1: bundler 模式下 allowImportingTsExtensions 必须配合 noEmit */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,               /* 改为 true：因为 Vite 负责输出，tsc 只负责检查 */
+    
+    /* 关键修复点 2: 主配置通常不需要 composite，除非你要把整个 src 当作包给别人引用 */
+    "composite": false,           /* 改为 false */
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": false,
+    "noFallthroughCasesInSwitch": false,
+
+    /* Path mapping */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

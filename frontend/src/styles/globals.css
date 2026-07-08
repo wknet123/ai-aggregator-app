@@ -1,0 +1,309 @@
+@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+@layer base {
+  body {
+    @apply bg-[#0d0d0f] text-gray-100 min-h-screen;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Prevent horizontal scroll on mobile */
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+  
+  /* Better touch targets on mobile */
+  @media (max-width: 768px) {
+    button, a, input, select, textarea {
+      min-height: 44px;
+    }
+  }
+  
+  /* Custom scrollbar for modern look */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  @media (min-width: 768px) {
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: #1a1a1f;
+    border-radius: 10px;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #e91e8c, #a855f7);
+    border-radius: 10px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #d91680, #9333ea);
+  }
+  
+  /* Selection color */
+  ::selection {
+    background: rgba(233, 30, 140, 0.3);
+    color: #e91e8c;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-3 md:px-4 py-2 md:py-2.5 rounded-xl font-medium transition-all duration-300 transform text-sm md:text-base;
+  }
+  
+  .btn:hover {
+    @apply scale-[1.02];
+  }
+  
+  .btn:active {
+    @apply scale-[0.98];
+  }
+  
+  .btn-primary {
+    @apply bg-gradient-to-r from-pink-500 via-purple-500 to-pink-500 text-white;
+    @apply hover:shadow-lg hover:shadow-pink-500/30;
+  }
+  
+  .btn-secondary {
+    @apply bg-[#1a1a1f] text-gray-300 hover:bg-[#252530] border border-gray-700/50;
+  }
+  
+  .input {
+    @apply w-full px-3 md:px-4 py-2.5 md:py-3 bg-[#1a1a1f] border border-gray-700/50 rounded-xl text-sm md:text-base text-gray-100;
+    @apply focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500;
+    @apply transition-all duration-200;
+    @apply placeholder:text-gray-500;
+  }
+  
+  .input:hover {
+    @apply border-gray-600;
+  }
+  
+  .card {
+    @apply bg-[#16161a]/80 backdrop-blur-sm rounded-xl md:rounded-2xl shadow-lg shadow-black/20 p-4 md:p-6;
+    @apply border border-gray-800/50;
+    @apply hover:shadow-xl hover:shadow-pink-500/10 transition-all duration-300;
+  }
+
+  /* Safe area for mobile devices with notches */
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Animated gradient background for special sections */
+  .gradient-bg {
+    background: linear-gradient(-45deg, #e91e8c, #a855f7, #6366f1, #e91e8c);
+    background-size: 400% 400%;
+    animation: gradientShift 15s ease infinite;
+  }
+  
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  
+  /* Shimmer effect for loading states */
+  .shimmer {
+    background: linear-gradient(90deg, #1a1a1f 25%, #252530 50%, #1a1a1f 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  
+  /* Glow effect for buttons */
+  .glow {
+    box-shadow: 0 0 20px rgba(233, 30, 140, 0.3);
+  }
+  
+  .glow:hover {
+    box-shadow: 0 0 30px rgba(233, 30, 140, 0.5);
+  }
+  
+  /* Glass effect */
+  .glass {
+    @apply bg-[#16161a]/60 backdrop-blur-xl border border-gray-700/30;
+  }
+  
+  /* Floating animation */
+  .float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+
+  /* ===== Pollo.ai Style Components ===== */
+
+  /* + 新建 Button - Gradient with hover glow */
+  .btn-new-create {
+    @apply w-full py-3 rounded-xl font-semibold text-white text-sm;
+    @apply flex items-center justify-center gap-2;
+    background: linear-gradient(135deg, #e91e8c 0%, #a855f7 50%, #6366f1 100%);
+    background-size: 200% 200%;
+    animation: gradientShift 8s ease infinite;
+    @apply transition-all duration-300;
+    @apply hover:shadow-lg hover:shadow-pink-500/40 hover:scale-[1.02];
+    @apply active:scale-[0.98];
+  }
+
+  /* Sidebar Group Title */
+  .sidebar-group-title {
+    @apply text-[10px] md:text-xs text-gray-500 uppercase tracking-wider px-3 py-2;
+    @apply font-medium;
+  }
+
+  /* Tab Pill - Active State */
+  .tab-pill-active {
+    @apply px-3 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium;
+    @apply bg-gradient-to-r from-pink-500 to-purple-500 text-white;
+    @apply shadow-lg shadow-pink-500/20;
+    @apply transition-all duration-300 whitespace-nowrap;
+  }
+
+  /* Tab Pill - Inactive State */
+  .tab-pill-inactive {
+    @apply px-3 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium;
+    @apply bg-[#1a1a1f] text-gray-400 border border-gray-700/50;
+    @apply hover:text-gray-200 hover:border-gray-600 hover:bg-[#252530];
+    @apply transition-all duration-300 whitespace-nowrap;
+  }
+
+  /* Quick Prompt Tag */
+  .quick-prompt-tag {
+    @apply flex items-center gap-1 md:gap-1.5 px-2.5 md:px-3 py-1.5;
+    @apply bg-[#1a1a1f] border border-gray-700/50 rounded-full;
+    @apply text-[10px] md:text-xs text-gray-400;
+    @apply hover:text-gray-200 hover:border-pink-500/50 hover:bg-pink-500/10;
+    @apply transition-all duration-200 whitespace-nowrap cursor-pointer;
+  }
+
+  /* Large Input Area */
+  .input-large {
+    @apply w-full bg-[#16161a] rounded-xl md:rounded-2xl border border-gray-800/50 p-3 md:p-5;
+    @apply hover:border-gray-700 focus-within:border-pink-500/50 focus-within:shadow-lg focus-within:shadow-pink-500/10;
+    @apply transition-all duration-300;
+  }
+
+  .input-large textarea {
+    @apply w-full bg-transparent border-none text-gray-100 placeholder:text-gray-500;
+    @apply resize-none focus:outline-none text-sm md:text-lg;
+  }
+
+  /* Sidebar Navigation Link - Active */
+  .sidebar-link-active {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg;
+    @apply bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-400;
+    @apply border-l-2 border-pink-500;
+    @apply transition-all duration-200;
+  }
+
+  /* Sidebar Navigation Link - Inactive */
+  .sidebar-link-inactive {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg;
+    @apply text-gray-400;
+    @apply hover:bg-white/5 hover:text-gray-200;
+    @apply transition-all duration-200;
+  }
+
+  /* Config Bar Divider */
+  .config-divider {
+    @apply h-4 w-px bg-gray-700/70;
+  }
+
+  /* Gallery Card Hover Enhancement */
+  .gallery-card {
+    @apply relative overflow-hidden bg-[#16161a] cursor-pointer;
+    @apply transition-all duration-300;
+  }
+
+  /* Gallery Item - Edge to edge images */
+  .gallery-item {
+    @apply relative overflow-hidden rounded-lg;
+    @apply transition-all duration-300 ease-out;
+  }
+
+  .gallery-item:hover {
+    @apply z-10;
+    box-shadow: 0 8px 30px rgba(236, 72, 153, 0.15);
+  }
+
+  /* Carousel Card */
+  .carousel-card {
+    @apply relative rounded-2xl overflow-hidden cursor-pointer;
+    @apply transition-all duration-500;
+  }
+
+  .carousel-card:hover {
+    @apply shadow-2xl shadow-pink-500/20;
+  }
+
+  /* Portal Page Animations */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 20px rgba(236, 72, 153, 0.3); }
+    50% { box-shadow: 0 0 40px rgba(236, 72, 153, 0.5); }
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  .animate-slideUp {
+    animation: slideUp 0.4s ease-out;
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .duration-2000 {
+    transition-duration: 2000ms;
+  }
+
+  /* Portal dropdown menu styling */
+  .portal-dropdown {
+    @apply absolute top-full left-0 mt-2 bg-[#1a1a1f]/95 backdrop-blur-xl;
+    @apply rounded-2xl border border-gray-800/50 shadow-2xl;
+  }
+}

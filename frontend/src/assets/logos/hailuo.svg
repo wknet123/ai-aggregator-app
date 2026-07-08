@@ -1,0 +1,10 @@
+<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Hailuo">
+  <defs>
+    <linearGradient id="hlGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#hlGrad)"/>
+  <path d="M32 32 m0 0 C32 27 39 27 39 33 C39 40 30 41 28 33 C26 24 36 22 42 27 C49 33 45 45 34 45 C22 45 18 32 26 24" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none"/>
+</svg>

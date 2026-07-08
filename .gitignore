@@ -1,0 +1,71 @@
+# ============================================
+# Secrets & environment
+# ============================================
+.env
+.env.*
+!.env.example
+.neolink
+*.pem
+*.key
+
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+wheels/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ============================================
+# Node / Frontend
+# ============================================
+node_modules/
+frontend/dist/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============================================
+# Docker runtime data (bind-mounted volumes — never commit)
+# ============================================
+deploy/mysql_data/
+deploy/minio_data/
+deploy/redis_data/
+deploy/storage/
+backend/storage/
+
+# LangGraph per-run checkpoints
+backend/storage/agent_ckpt/
+*.sqlite
+*.sqlite3
+*.db
+
+# ============================================
+# Logs / pids / caches
+# ============================================
+logs/
+*.log
+*.pid
+
+# ============================================
+# Backups & editor/OS cruft
+# ============================================
+*.bak
+*.bak-*
+**/app.bak-*/
+**/src.bak-*/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

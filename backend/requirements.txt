@@ -1,0 +1,57 @@
+# FastAPI Backend Dependencies
+
+# Core
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+
+# Database
+sqlalchemy[asyncio]==2.0.38  # 2.0.36 has aiomysql pool_pre_ping bug (ping() missing 'reconnect'); fixed in 2.0.38
+aiomysql==0.2.0
+# Pin <1.2.0: PyMySQL 1.2.0 changed ping() default to reconnect=False, which breaks
+# the aiomysql pre-ping adapter (ping() missing 'reconnect'). 1.1.1 keeps reconnect=True.
+pymysql==1.1.1
+alembic==1.14.0
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+pydantic-settings==2.7.0
+
+# HTTP Client
+httpx==0.28.1
+
+# Utilities
+pydantic==2.10.4
+python-dotenv==1.0.1
+aiofiles==24.1.0
+pillow==11.0.0
+
+# AI/ML Integrations
+google-genai==1.52.0
+google-cloud-aiplatform==1.132.0
+
+# Optional (for production)
+redis==5.2.1
+
+# Loop Harness (Custom Agent 编排) —— 独立 worker 服务
+langgraph==0.2.61
+langchain-openai==0.2.14
+arq==0.26.3
+# 检查点持久化（续跑）：sqlite saver，per-run 文件，落共享 storage 卷。
+# 2.0.11 带 langgraph-checkpoint 2.1.2（在 langgraph 0.2.61 的 <3 范围内）。
+langgraph-checkpoint-sqlite==2.0.11
+# aiosqlite 0.22 移除了 Thread 基类(无 is_alive)，与 sqlite saver 2.0.11 的 setup() 不兼容；
+# 0.20.0 仍是 Thread 子类(有 is_alive)。必须固定。
+aiosqlite==0.20.0
+
+# Object Storage
+minio==7.2.15
+
+# Video frame extraction (bundles a static ffmpeg binary — no system package needed)
+imageio-ffmpeg==0.5.1
+
+# Payment
+alipay-sdk-python==3.7.868
+email-validator>=2.0.0
+bcrypt==4.0.1

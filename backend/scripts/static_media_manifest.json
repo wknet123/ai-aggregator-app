@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-03-06T02:18:13Z",
+  "minio_bucket": "ai-aggregator",
+  "minio_prefix": "public/static",
+  "frontend_prefix": "/api/v1/static",
+  "files": {
+    "https://images.unsplash.com/photo-1684369175833-4b445ad6bfb5?w=600&q=80": {
+      "filename": "5175cc58a5b5.jpg",
+      "local_url": "/api/v1/static/5175cc58a5b5.jpg"
+    },
+    "https://images.unsplash.com/photo-1638803040283-7a5ffd48dad5?w=600&q=80": {
+      "filename": "c69addbd6c94.jpg",
+      "local_url": "/api/v1/static/c69addbd6c94.jpg"
+    },
+    "https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?w=1920&q=80": {
+      "filename": "a831edea1bf5.jpg",
+      "local_url": "/api/v1/static/a831edea1bf5.jpg"
+    },
+    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1920&q=80": {
+      "filename": "a9fdf0aed2dd.jpg",
+      "local_url": "/api/v1/static/a9fdf0aed2dd.jpg"
+    },
+    "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=80": {
+      "filename": "7aa8272b7772.jpg",
+      "local_url": "/api/v1/static/7aa8272b7772.jpg"
+    },
+    "https://picsum.photos/seed/drama-ceo/240/426": {
+      "filename": "b998e314798f.jpg",
+      "local_url": "/api/v1/static/b998e314798f.jpg"
+    },
+    "https://picsum.photos/seed/drama-ancient/240/426": {
+      "filename": "c68ac8b6e08e.jpg",
+      "local_url": "/api/v1/static/c68ac8b6e08e.jpg"
+    },
+    "https://picsum.photos/seed/drama-mystery/240/426": {
+      "filename": "99d897386ed4.jpg",
+      "local_url": "/api/v1/static/99d897386ed4.jpg"
+    },
+    "https://picsum.photos/seed/drama-time/240/426": {
+      "filename": "fd0f80b2b1d9.jpg",
+      "local_url": "/api/v1/static/fd0f80b2b1d9.jpg"
+    },
+    "https://picsum.photos/seed/drama-rich/240/426": {
+      "filename": "b50435a976f4.jpg",
+      "local_url": "/api/v1/static/b50435a976f4.jpg"
+    },
+    "https://picsum.photos/seed/drama-xian/240/426": {
+      "filename": "d2c7bf8068cc.jpg",
+      "local_url": "/api/v1/static/d2c7bf8068cc.jpg"
+    },
+    "https://picsum.photos/seed/drama-campus/240/426": {
+      "filename": "348b6110ce72.jpg",
+      "local_url": "/api/v1/static/348b6110ce72.jpg"
+    },
+    "https://picsum.photos/seed/drama-doom/240/426": {
+      "filename": "2457f1d35099.jpg",
+      "local_url": "/api/v1/static/2457f1d35099.jpg"
+    },
+    "https://picsum.photos/seed/drama-revenge/240/426": {
+      "filename": "f81624c48779.jpg",
+      "local_url": "/api/v1/static/f81624c48779.jpg"
+    }
+  }
+}

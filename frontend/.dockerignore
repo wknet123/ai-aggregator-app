@@ -1,0 +1,14 @@
+# VITE_API_URL is passed as a build-arg from deploy/.env, not from a baked .env.
+.env
+.env.*
+!.env.example
+
+# Dependencies & build output
+node_modules/
+dist/
+
+# Editor/OS cruft
+.DS_Store
+.idea/
+.vscode/
+*.swp

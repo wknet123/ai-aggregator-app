@@ -1,0 +1,10 @@
+<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="DeepSeek">
+  <defs>
+    <linearGradient id="dsGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#dsGrad)"/>
+  <path d="M23 19 L23 45 C36 45 44 39 44 32 C44 25 36 19 23 19 Z" stroke="#fff" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+</svg>

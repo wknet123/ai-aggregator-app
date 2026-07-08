@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "strict": true,
+
+    /* 关键修复点：解决 TS6306 和 TS6310 */
+    "composite": true,           /* 必须开启，允许被主配置引用 */
+    "noEmit": false,             /* 必须关闭，composite 模式下需要输出元数据 */
+    "emitDeclarationOnly": true  /* 只输出类型声明文件，不生成 JS 文件 */
+  },
+  "include": ["vite.config.ts"]
+}
