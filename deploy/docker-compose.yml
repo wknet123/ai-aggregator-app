@@ -91,7 +91,7 @@ services:
       - .env
     environment:
       # Database
-      DATABASE_URL: mysql+aiomysql://${DB_USER:-ai_user}:${DB_PASSWORD:-Ai@User2024}@db:${DB_PORT}/${DB_NAME:-ai_aggregator}
+      DATABASE_URL: "mysql+aiomysql://${DB_USER:-ai_user}:${DB_PASSWORD_URLENCODED:-Ai%40User2024}@db:${DB_PORT:-3306}/${DB_NAME:-ai_aggregator}"
       # Security
       SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-in-production-2024}
       # AI Aggregation Gateway (single token for all models)
@@ -149,7 +149,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: mysql+aiomysql://${DB_USER:-ai_user}:${DB_PASSWORD:-Ai@User2024}@db:${DB_PORT}/${DB_NAME:-ai_aggregator}
+      DATABASE_URL: "mysql+aiomysql://${DB_USER:-ai_user}:${DB_PASSWORD_URLENCODED:-Ai%40User2024}@db:${DB_PORT:-3306}/${DB_NAME:-ai_aggregator}"
       SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-in-production-2024}
       AI_GATEWAY_BASE_URL: ${AI_GATEWAY_BASE_URL:-https://neolink.com/api/v1}
       AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY}

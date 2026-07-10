@@ -22,9 +22,13 @@ class AuthService:
         self.tenant_repo = TenantRepository(db)
     
     async def authenticate_user(self, username: str, password: str) -> Optional[User]:
-        """Authenticate user with username and password"""
-        user = await self.user_repo.get_by_username(username)
-        
+        """Authenticate user with username or email and password"""
+        login_id = (username or "").strip()
+        user = await self.user_repo.get_by_username(login_id)
+
+        if not user and "@" in login_id:
+            user = await self.user_repo.get_by_email(login_id)
+
         if not user:
             return None
         

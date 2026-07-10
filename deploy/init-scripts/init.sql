@@ -5,8 +5,9 @@
 -- Last Updated: 2026-01-13
 -- ============================================
 
--- Use the database
-USE ai_aggregator;
+-- 数据库/用户初始化由 MySQL 官方镜像根据环境变量完成：
+-- MYSQL_DATABASE / MYSQL_USER / MYSQL_PASSWORD。
+-- 本脚本仅负责建表与种子数据，避免与 .env 脱节。
 
 -- ============================================
 -- 1. Tenants Table (Multi-tenant architecture)
@@ -284,7 +285,7 @@ INSERT INTO users (email, username, hashed_password, full_name, is_active, is_ad
 (
     'admin@example.com',
     'admin',
-    '$2b$12$Gwf0uvxH3L7JLfo0CC/Ic.QL3IZkDzn6U5VdnCLPzfNr5rqKp1vdq',
+    '$2b$12$7Xzm8wIWidwNQ90n6DVnROQbJ0FsbNbfHdFNOuBfs9e21tzNa.R8S',
     'System Administrator',
     TRUE,
     TRUE,
@@ -300,7 +301,7 @@ INSERT INTO users (email, username, hashed_password, full_name, is_active, is_ad
 (
     'demo@example.com',
     'demo',
-    '$2b$12$Gwf0uvxH3L7JLfo0CC/Ic.QL3IZkDzn6U5VdnCLPzfNr5rqKp1vdq',
+    '$2b$12$7Xzm8wIWidwNQ90n6DVnROQbJ0FsbNbfHdFNOuBfs9e21tzNa.R8S',
     'Demo User',
     TRUE,
     FALSE,
@@ -350,8 +351,8 @@ INSERT IGNORE INTO credit_packages (name, description, credits, price, original_
 SELECT '========================================' AS '';
 SELECT 'Database initialization completed!' AS message;
 SELECT '========================================' AS '';
-SELECT 'Default admin: admin@example.com / 123456' AS credentials;
-SELECT 'Demo user: demo@example.com / 123456' AS credentials;
+SELECT 'Default admin: admin (or admin@example.com) / 123456' AS credentials;
+SELECT 'Demo user: demo (or demo@example.com) / 123456' AS credentials;
 SELECT 'Initial credits: 1000' AS credits;
 SELECT 'Credit packages: 5 packages created' AS packages;
 SELECT '========================================' AS '';

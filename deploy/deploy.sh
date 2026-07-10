@@ -100,7 +100,7 @@ case $COMMAND in
     
     "db")
         echo -e "${GREEN}Connecting to MySQL database...${NC}"
-        docker compose exec db mysql -u ai_user -pAi@User2024 ai_aggregator
+        docker compose exec db sh -lc 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"'
         ;;
     
     *)

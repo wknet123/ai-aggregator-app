@@ -108,7 +108,7 @@ Design docs: `docs/loop-harness-integration.md`, `docs/custom-agent-skill-plugin
 ## Key Conventions
 
 - Env config is consolidated into a single `deploy/.env` (template `deploy/.env.example`). docker-compose uses it for variable substitution and `backend`/`harness-worker` load it via `env_file:`; the `environment:` block still overrides container-internal topology (`DATABASE_URL`/`REDIS_URL`/`MINIO_ENDPOINT`). No separate `.env` under `backend/` or `frontend/` (frontend `VITE_API_URL` comes from a build-arg). `.dockerignore` keeps any local `.env` out of images. For non-Docker backend dev, hand-write `backend/.env` pointing at localhost (see root README).
-- DB password contains `@` — must be URL-encoded (`%40`) in `DATABASE_URL`
+- DB password variables are split in deploy config: `DB_PASSWORD` is raw (for MySQL init), `DB_PASSWORD_URLENCODED` is URL-encoded (for `DATABASE_URL`)
 - Backend async throughout: async SQLAlchemy, httpx for external calls, uvicorn
 - Frontend styling: Tailwind CSS 4 utility classes, dark theme (`bg-[#0d0d15]` etc.)
 - Icons: `lucide-react`

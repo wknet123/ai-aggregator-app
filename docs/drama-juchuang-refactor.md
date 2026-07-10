@@ -243,7 +243,7 @@ ffmpeg 二进制：`imageio-ffmpeg`（`requirements.txt` 已含，自带 v4.2.2 
 | `SECRET_KEY` | `config.py` | HMAC 签名密钥（ref-asset） |
 | `MINIO_*` | `.env` | 内网 `minio:9000`；`MINIO_PUBLIC_ENDPOINT` 对本功能**无效**(no-op) |
 
-> nginx：`deploy/nginx/nginx.conf` 将 `/api/` 反代到 `backend:8000`，`proxy_buffering off` + `client_max_body_size 100M`，适合流式参考媒体。
+> nginx：`frontend/nginx.conf` 将 `/api/` 反代到 `backend:8000`，`proxy_buffering off` + `client_max_body_size 100M`，适合流式参考媒体。
 
 ---
 

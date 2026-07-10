@@ -12,8 +12,7 @@ deploy/
 ├── dockerfiles/
 │   ├── Dockerfile.backend  # 后端镜像构建文件
 │   └── Dockerfile.frontend # 前端镜像构建文件
-├── nginx/
-│   └── nginx.conf          # Nginx 配置
+├── ../frontend/nginx.conf  # 前端镜像使用的 Nginx 配置（由 Dockerfile.frontend 复制）
 ├── mysql/
 │   └── my.cnf              # MySQL 配置
 └── init-scripts/
@@ -99,8 +98,13 @@ deploy.bat up
 | `DB_ROOT_PASSWORD` | MySQL root 密码 | `Ai@ggregator2024` |
 | `DB_NAME` | 数据库名 | `ai_aggregator` |
 | `DB_USER` | 数据库用户 | `ai_user` |
-| `DB_PASSWORD` | 数据库密码 | `Ai@User2024` |
+| `DB_PASSWORD` | 数据库原始密码（MySQL 初始化使用） | `Ai@User2024` |
+| `DB_PASSWORD_URLENCODED` | URL 编码密码（DATABASE_URL 使用） | `Ai%40User2024` |
 | `DB_PORT` | 数据库端口 | `3306` |
+
+说明：
+- `init-scripts/init.sql` 不再写死库名和用户，建表会使用 MySQL 容器的 `MYSQL_DATABASE`（由 `DB_NAME` 注入）。
+- MySQL 初始化脚本只在数据目录首次初始化时执行；如果你已存在 `deploy/mysql_data`，修改 `DB_NAME/DB_USER/DB_PASSWORD` 后不会自动重建用户和库。
 
 ### AI 服务 API Keys
 
