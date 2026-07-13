@@ -21,7 +21,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 from app.config import settings
 from app.dependencies import get_current_user
-from app.integrations.gateway import get_gateway_client
+from app.integrations.gateway import get_gateway_client, get_gateway_client_for_user
 from app.models.user import User
 from app.schemas.response import ResponseBase
 
@@ -103,12 +103,12 @@ class StoryboardResponse(BaseModel):
 
 # ── Shared text-reasoning helper (aggregation gateway → deepseek-v4-flash) ─────
 
-async def _call_text(prompt: str, timeout: float = 30.0) -> str:
+async def _call_text(prompt: str, timeout: float = 30.0, user_id: int | None = None) -> str:
     """Call deepseek-v4-flash and return plain text (no JSON constraint)."""
     if not settings.AI_GATEWAY_API_KEY:
         raise HTTPException(status_code=503, detail="AI 网关未配置 (AI_GATEWAY_API_KEY)")
 
-    raw = (await get_gateway_client().chat(
+    raw = (await get_gateway_client_for_user(user_id).chat(
         [{"role": "user", "content": prompt}],
         temperature=0.7,
         max_tokens=1024,
@@ -124,12 +124,12 @@ async def _call_text(prompt: str, timeout: float = 30.0) -> str:
     return raw.strip()
 
 
-async def _call_json(prompt: str, timeout: float = 60.0) -> str:
+async def _call_json(prompt: str, timeout: float = 60.0, user_id: int | None = None) -> str:
     """Call deepseek-v4-flash in JSON mode and return raw JSON text. Retries on 429."""
     if not settings.AI_GATEWAY_API_KEY:
         raise HTTPException(status_code=503, detail="AI 网关未配置 (AI_GATEWAY_API_KEY)")
 
-    return await get_gateway_client().chat(
+    return await get_gateway_client_for_user(user_id).chat(
         [{"role": "user", "content": prompt}],
         temperature=0.85,
         max_tokens=8192,
@@ -221,7 +221,7 @@ async def generate_outline(
 请生成 {req.episode_count} 集的短剧大纲，每集时长约 3-5 分钟（约 15-20 个镜头）。
 注意: 角色设定要贯穿全剧保持一致，场景可复用。"""
 
-    raw = await _call_json(f"{OUTLINE_SYSTEM_PROMPT}\n\n{user_prompt}")
+    raw = await _call_json(f"{OUTLINE_SYSTEM_PROMPT}\n\n{user_prompt}", user_id=current_user.id)
 
     try:
         data = json.loads(raw)
@@ -326,7 +326,7 @@ async def parse_script(
 {materials_block}
 请把上面的剧本解析为结构化的分集大纲，忠于原剧本的人物与情节。"""
 
-    raw = await _call_json(f"{PARSE_SCRIPT_SYSTEM_PROMPT}\n\n{user_prompt}")
+    raw = await _call_json(f"{PARSE_SCRIPT_SYSTEM_PROMPT}\n\n{user_prompt}", user_id=current_user.id)
 
     try:
         data = json.loads(raw)
@@ -466,7 +466,7 @@ async def generate_storyboard(
 2. prompt 必须是英文，适合 Flux Kontext/Stable Diffusion 的提示词风格
 3. 根据画幅 {req.aspect_ratio} 描述构图（竖幅注重人物正面/表情，横幅注重场景全景）"""
 
-    raw = await _call_json(f"{STORYBOARD_SYSTEM_PROMPT}\n\n{user_prompt}")
+    raw = await _call_json(f"{STORYBOARD_SYSTEM_PROMPT}\n\n{user_prompt}", user_id=current_user.id)
 
     try:
         data = json.loads(raw)
@@ -961,7 +961,7 @@ async def generate_beat_script(
         f"画幅比例：{req.aspect_ratio}\n"
         f"请按上述要求生成分镜脚本。"
     )
-    raw = await _call_json(f"{BEAT_SCRIPT_SYSTEM_PROMPT}\n\n{user_prompt}")
+    raw = await _call_json(f"{BEAT_SCRIPT_SYSTEM_PROMPT}\n\n{user_prompt}", user_id=current_user.id)
     try:
         data = json.loads(raw)
         beats = [
@@ -1048,7 +1048,7 @@ async def compose_shot_prompt(
         f"结构化分镜事实：\n{baseline}\n\n请据此输出最终提示词。"
     )
     try:
-        prompt = await _call_text(f"{COMPOSE_PROMPT_SYSTEM}\n\n{user_prompt}", timeout=45.0)
+        prompt = await _call_text(f"{COMPOSE_PROMPT_SYSTEM}\n\n{user_prompt}", timeout=45.0, user_id=current_user.id)
     except HTTPException:
         raise
     except Exception as exc:

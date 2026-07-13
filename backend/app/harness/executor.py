@@ -37,7 +37,8 @@ from app.plugins.base import PluginContext
 from app.plugins.registry import all_plugins, get_plugin, load_builtin_plugins
 from app.services.credit_service import CreditService
 from app.services.storage import get_storage_service
-from app.integrations.gateway.client import get_gateway_client
+from app.integrations.gateway.client import get_gateway_client_for_user
+from app.services import gateway_config_service
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,9 @@ async def execute_run(run_id: str) -> None:
 
     # 判定入口模式：fresh（首次）/ confirm_resume（人工确认后）/ crash_resume（崩溃重入队）
     async with AsyncSessionLocal() as db:
+        # worker 是独立进程：确保网关解析缓存已加载（首个 Run 时冷启动）
+        if not gateway_config_service.is_loaded():
+            await gateway_config_service.refresh_cache(db)
         run = await _load_run(db, run_id)
         if not run:
             logger.error("execute_run: run %s 不存在", run_id)
@@ -94,13 +98,13 @@ async def execute_run(run_id: str) -> None:
 
     ctx = PluginContext(
         user_id=user_id, tenant_id=tenant_id, run_id=run_id,
-        storage=get_storage_service(), gateway=get_gateway_client(),
+        storage=get_storage_service(), gateway=get_gateway_client_for_user(user_id),
     )
     allowed = set(runtime["allowed_plugins"])
     plugins = [p for p in all_plugins() if p.name in allowed]
     tool_specs = [p.to_openai_tool() for p in plugins]
     tool_map = {p.tool_name: p for p in plugins}
-    llm = get_llm().bind_tools(tool_specs)
+    llm = get_llm(user_id=user_id).bind_tools(tool_specs)
 
     step_counter = {"i": 0}
     # 恢复入口下从已有最大 step_index 续号，避免跨 invocation 索引冲突（轨迹可读）

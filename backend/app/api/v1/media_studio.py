@@ -43,7 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.session import get_db
 from app.dependencies import get_current_user
-from app.integrations.gateway.client import GatewayError, get_gateway_client
+from app.integrations.gateway.client import GatewayError, get_gateway_client, get_gateway_client_for_user
 from app.models.user import User
 from app.schemas.response import ResponseBase
 from app.schemas.file import FileUploadResponse, GenerationTaskResponse
@@ -270,7 +270,7 @@ async def _resolve_image_bytes(user_id: int, ref: str) -> Optional[bytes]:
         if not url:
             return None
         try:
-            return await get_gateway_client().fetch_bytes(url)
+            return await get_gateway_client_for_user(user_id).fetch_bytes(url)
         except Exception as e:  # noqa: BLE001
             logger.warning("studio: fetch static ref image %s failed: %s", ref, e)
             return None
@@ -497,7 +497,7 @@ async def create_effect(
     ref_id = req.reference_image_id
 
     async def worker() -> bytes:
-        gw = get_gateway_client()
+        gw = get_gateway_client_for_user(uid)
         img = await _read_upload_bytes(uid, image_id)
         if img is None:
             raise GatewayError("未找到上传的图片")
@@ -542,7 +542,7 @@ async def create_short_video(
     hl_duration = 10 if req.duration and req.duration > 6 else 6
 
     async def worker() -> bytes:
-        gw = get_gateway_client()
+        gw = get_gateway_client_for_user(uid)
         first_frame = await _read_upload_bytes(uid, frame_id) if frame_id else None
         gw_task = await gw.hailuo_create(
             prompt, first_frame_image=first_frame, duration=hl_duration, resolution="768P",
@@ -575,7 +575,7 @@ async def create_video2video(
     ref_ids = list(req.reference_image_ids or [])
 
     async def worker() -> bytes:
-        gw = get_gateway_client()
+        gw = get_gateway_client_for_user(uid)
         video_url = await _resolve_video_public_url(uid, video_id)
         if not video_url:
             raise GatewayError("未找到源视频,或 PUBLIC_BASE_URL/MinIO 未配置")
@@ -642,7 +642,7 @@ async def create_motion(
     orientation, keep_sound = req.character_orientation, req.keep_original_sound
 
     async def worker() -> bytes:
-        gw = get_gateway_client()
+        gw = get_gateway_client_for_user(uid)
         # 动作参考:自定义上传视频 → 公网签名 URL;内置模板 → static 公网 URL。
         if motion_id:
             motion_url = await _public_upload_url(uid, motion_id)
@@ -704,7 +704,7 @@ async def create_video_edit(
     prompt, video_id, edit_type = req.prompt, req.video_id, req.edit_type
 
     async def worker() -> bytes:
-        gw = get_gateway_client()
+        gw = get_gateway_client_for_user(uid)
         # HappyHorse 视频编辑: 优先公网 URL,取不到则回退 base64 内联上传字节
         video_url = await _public_video_url(uid, video_id)
         video_bytes = None if video_url else await _read_upload_bytes(uid, video_id)

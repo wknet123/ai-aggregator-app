@@ -645,9 +645,9 @@ async def _generate_shot_video(
     """
     from app.services.storage import get_storage_service
     from app.config import settings
-    from app.integrations.gateway import get_gateway_client, GatewayError
+    from app.integrations.gateway import get_gateway_client_for_user, GatewayError
 
-    gw = get_gateway_client()
+    gw = get_gateway_client_for_user(user_id)
     storage = get_storage_service()
     from app.api.v1.drama import _public_asset_url
 

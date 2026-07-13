@@ -518,7 +518,7 @@ async def dry_run(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     try:
-        result = await plan_only(runtime, goal, body.inputs)
+        result = await plan_only(runtime, goal, body.inputs, user_id=current_user.id)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"规划失败: {exc}")
     return ResponseBase(success=True, data=result)

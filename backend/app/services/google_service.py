@@ -27,10 +27,10 @@ GATEWAY_PRICING = {
 class GoogleService:
     """AI gateway image/video service with credit management"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, user_id: int | None = None):
         self.db = db
         self.settings = Settings()
-        self.client = GoogleAIClient()
+        self.client = GoogleAIClient(user_id=user_id)
         self.executor = AITaskExecutor(db)
 
     def _calculate_image_cost(self, model_id: str = "wan2.7-image") -> int:

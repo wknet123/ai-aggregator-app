@@ -851,3 +851,15 @@ def get_gateway_client() -> GatewayClient:
     if _gateway_singleton is None:
         _gateway_singleton = GatewayClient()
     return _gateway_singleton
+
+
+def get_gateway_client_for_user(user_id: Optional[int]) -> GatewayClient:
+    """按用户解析网关凭证，返回一个专用 GatewayClient。
+
+    用户映射 → 默认组 → settings 兜底（见 gateway_config_service.resolve_for_user）。
+    每次按需构造（GatewayClient 很薄，无连接池），确保凭证随 admin 变更即时生效。
+    """
+    # 延迟 import 规避潜在循环依赖
+    from app.services.gateway_config_service import resolve_for_user
+    base_url, api_key = resolve_for_user(user_id)
+    return GatewayClient(api_key=api_key, base_url=base_url)

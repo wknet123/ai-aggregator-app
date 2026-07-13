@@ -20,6 +20,8 @@ class User(Base):
     
     # Foreign Keys
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    # 映射到某一组 AI 网关凭证；NULL = 使用默认组（is_default）。
+    gateway_config_id = Column(Integer, ForeignKey("gateway_configs.id"), nullable=True)
     
     # Relationships
     tenant = relationship("Tenant", back_populates="users")

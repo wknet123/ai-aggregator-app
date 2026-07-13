@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from app.config import settings
-from app.api.v1 import auth, users, tenants, credits, models, openai, google, flux, workflows, payment, douyin, suggestions, storage, drama, drama_projects, static_media, characters, render_pipeline, media_studio, project_assets, ai_characters, agents
+from app.api.v1 import auth, users, tenants, credits, models, openai, google, flux, workflows, payment, douyin, suggestions, storage, drama, drama_projects, static_media, characters, render_pipeline, media_studio, project_assets, ai_characters, agents, admin_gateway
 from app.middleware.tenant_context import TenantContextMiddleware
 from app.middleware.logging import LoggingMiddleware
 from app.middleware.error_handler import error_handler_middleware
@@ -29,6 +29,10 @@ _COLUMN_MIGRATIONS = {
         "archived_at": "DATETIME NULL",
     },
     "generation_tasks": {
+        # 收藏标记 (0=否, 1=是)。模型自始有此列，但早期库可能未建，补齐。
+        "is_favorite": "INT NOT NULL DEFAULT 0",
+        # 公开标记 (0=私有, 1=公开)。模型有此列但缺对应迁移，旧库缺列导致查询/写入 1054。
+        "is_public": "INT NOT NULL DEFAULT 0",
         # 作品展示标记：1=作为作品展示(作品画廊/AI图片/AI视频)，0=中间过程产物/上传素材。
         # 默认 1 让历史既有数据保持可见；中间产物在写库时显式置 0。
         "show_in_gallery": "TINYINT NOT NULL DEFAULT 1",
@@ -48,6 +52,10 @@ _COLUMN_MIGRATIONS = {
         "confirm_decision": "JSON NULL",
         # P1-a：Run 启动时的合并后运行配置快照。
         "agent_snapshot": "JSON NULL",
+    },
+    "users": {
+        # 多组网关：用户→网关配置映射（NULL=默认组）。create_all 不改已存在的 users 表。
+        "gateway_config_id": "INT NULL",
     },
 }
 
@@ -120,6 +128,36 @@ async def _seed_default_agent() -> None:
         print(f"⚠️  seed default agent skipped: {exc}")
 
 
+async def _seed_default_gateway_config() -> None:
+    """幂等：把 .env 的 AI_GATEWAY_* 迁移为 DB 里的默认网关组，并预热解析缓存。
+
+    若已存在 is_default=True 的行则不覆盖（尊重 admin 后续的界面修改）。
+    """
+    from sqlalchemy import select
+    from app.db.session import AsyncSessionLocal
+    from app.models.gateway_config import GatewayConfig
+    from app.services import gateway_config_service
+    try:
+        async with AsyncSessionLocal() as db:
+            existing = (await db.execute(
+                select(GatewayConfig).where(GatewayConfig.is_default.is_(True))
+            )).scalar_one_or_none()
+            if existing is None:
+                db.add(GatewayConfig(
+                    name="默认网关（迁移自 .env）",
+                    base_url=(settings.AI_GATEWAY_BASE_URL or "").rstrip("/"),
+                    api_key=settings.AI_GATEWAY_API_KEY or "",
+                    is_default=True,
+                    is_active=True,
+                ))
+                await db.commit()
+                print("🌱 seeded default gateway config from .env")
+            # 预热进程内解析缓存
+            await gateway_config_service.refresh_cache(db)
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️  seed default gateway config skipped: {exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
@@ -150,6 +188,9 @@ async def lifespan(app: FastAPI):
 
     # P1-a: 幂等播种内置 system default agent（+ 示例 skill），让列表非空且 executor 可从库加载
     await _seed_default_agent()
+
+    # 多组网关：把 .env 的 AI_GATEWAY_* 迁移为 DB 默认组并预热解析缓存
+    await _seed_default_gateway_config()
 
     yield
     
@@ -209,6 +250,7 @@ app.include_router(ai_characters.router, prefix="/api/v1/ai-characters", tags=["
 app.include_router(agents.router, prefix="/api/v1/agents", tags=["Custom Agents"])
 app.include_router(render_pipeline.router, prefix="/api/v1/render/pipeline", tags=["Render Pipeline"])
 app.include_router(media_studio.router, prefix="/api/v1/studio", tags=["Media Studio"])
+app.include_router(admin_gateway.router, prefix="/api/v1/admin/gateway", tags=["Admin Gateway"])
 
 # Mount static files for serving generated content
 storage_path = Path(settings.STORAGE_BASE_PATH)

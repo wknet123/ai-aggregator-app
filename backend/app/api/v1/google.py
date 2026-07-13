@@ -179,7 +179,7 @@ async def generate_image(
         raise HTTPException(status_code=500, detail="AI 网关未配置")
 
     # Check credits before starting task
-    google_service = GoogleService(db)
+    google_service = GoogleService(db, user_id=current_user.id)
     cost = google_service._calculate_image_cost(task.model_id)
 
     try:
@@ -277,7 +277,7 @@ async def generate_video(
         raise HTTPException(status_code=400, detail="First frame image is required for image-to-video generation")
     
     # Check credits before starting task
-    google_service = GoogleService(db)
+    google_service = GoogleService(db, user_id=current_user.id)
     cost = google_service._calculate_video_cost(task.duration or 5)
     
     try:
@@ -816,7 +816,7 @@ async def process_image_generation_with_credits(
             await db.commit()
 
             # Initialize Google service
-            google_service = GoogleService(db)
+            google_service = GoogleService(db, user_id=user_id)
 
             # Update progress
             await db.execute(
@@ -1062,7 +1062,7 @@ async def process_video_generation_with_credits(
             await db.commit()
 
             # Initialize Google service
-            google_service = GoogleService(db)
+            google_service = GoogleService(db, user_id=user_id)
 
             # Update progress
             await db.execute(

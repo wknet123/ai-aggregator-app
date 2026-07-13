@@ -17,6 +17,7 @@ import MotionImitation from './pages/MotionImitation'
 import Vid2Vid from './pages/Vid2Vid'
 import OmniWeaverPro from './pages/OmniWeaverPro'
 import AgentStudio from './pages/AgentStudio'
+import AdminGateway from './pages/AdminGateway'
 import DouyinCallback from './pages/DouyinCallback'
 import { useAuthStore } from './store/auth.store'
 import { useCreditStore } from './store/credit.store'
@@ -137,7 +138,13 @@ function App() {
           path="/settings"
           element={isAuthenticated ? <Settings /> : <Navigate to="/login" />}
         />
-        
+        <Route
+          path="/admin/gateway"
+          element={
+            isAuthenticated && user?.is_admin ? <AdminGateway /> : <Navigate to="/gallery" />
+          }
+        />
+
         {/* Catch-all redirect */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

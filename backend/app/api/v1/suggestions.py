@@ -21,7 +21,7 @@ import httpx
 
 from app.config import settings
 from app.dependencies import get_current_user
-from app.integrations.gateway import get_gateway_client
+from app.integrations.gateway import get_gateway_client, get_gateway_client_for_user
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ async def get_quick_prompts(
     category_label = "图片" if category == "image" else "视频"
     try:
         prompt_text = _GEMINI_PROMPT.format(category_label=category_label)
-        raw = await get_gateway_client().chat(
+        raw = await get_gateway_client_for_user(None).chat(
             [{"role": "user", "content": prompt_text}],
             temperature=1.2,
             max_tokens=500,
@@ -231,7 +231,7 @@ async def polish_prompt(
         max_tokens = 300
 
     try:
-        polished = (await get_gateway_client().chat(
+        polished = (await get_gateway_client_for_user(current_user.id).chat(
             [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},

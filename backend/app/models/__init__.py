@@ -15,6 +15,7 @@ from app.models.project_asset import ProjectAsset, ProjectAssetImage
 from app.models.ai_character import AICharacterCategory, AICharacter, AICharacterImage
 from app.models.agent import AgentRun, AgentStep, Agent, Skill
 from app.models.render_pipeline import RenderPipeline
+from app.models.gateway_config import GatewayConfig
 
 __all__ = [
     "Tenant",
@@ -42,4 +43,5 @@ __all__ = [
     "Agent",
     "Skill",
     "RenderPipeline",
+    "GatewayConfig",
 ]

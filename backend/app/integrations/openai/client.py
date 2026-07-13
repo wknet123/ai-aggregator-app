@@ -11,7 +11,7 @@ import logging
 import aiofiles
 
 from app.config import settings
-from app.integrations.gateway import get_gateway_client
+from app.integrations.gateway import get_gateway_client_for_user
 from app.integrations.google.client import ar_to_size
 
 logger = logging.getLogger(__name__)
@@ -22,8 +22,9 @@ logger = logging.getLogger(__name__)
 class OpenAIClient:
     """Image client backed by the aggregation gateway (wan)."""
 
-    def __init__(self):
-        self.gateway = get_gateway_client()
+    def __init__(self, user_id: Optional[int] = None):
+        # user_id 解析按用户映射的网关凭证（None → DB 默认组，见 resolve_for_user）。
+        self.gateway = get_gateway_client_for_user(user_id)
 
     async def generate_image_gpt(
         self,

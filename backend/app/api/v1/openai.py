@@ -136,7 +136,7 @@ async def process_gpt_image_generation(
                 )
                 return
             
-            openai_client = OpenAIClient()
+            openai_client = OpenAIClient(user_id=user_id)
             
             # Update progress
             db_task.progress = 30
@@ -461,11 +461,12 @@ async def get_history(
 async def generate_image(
     request: ImageGenerationRequest,
     tenant: Annotated[Tenant, Depends(get_current_tenant)],
+    current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """Image Generation (wan via AI 网关) - Legacy endpoint"""
     try:
-        openai_service = OpenAIService(db, use_mock=True)  # Set to False for production
+        openai_service = OpenAIService(db, use_mock=True, user_id=current_user.id)  # Set to False for production
         
         result = await openai_service.generate_image(
             tenant_id=tenant.id,

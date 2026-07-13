@@ -18,9 +18,9 @@ GATEWAY_PRICING = {
 class OpenAIService:
     """Image generation service (wan via AI 网关) with credit management"""
 
-    def __init__(self, db: AsyncSession, use_mock: bool = True):
+    def __init__(self, db: AsyncSession, use_mock: bool = True, user_id: int | None = None):
         self.db = db
-        self.client = OpenAIClient()
+        self.client = OpenAIClient(user_id=user_id)
         self.executor = AITaskExecutor(db)
         self.use_mock = use_mock  # Toggle for testing
 

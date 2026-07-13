@@ -146,7 +146,7 @@ async def load_runtime(db, agent_key: Optional[str], tenant_id: int) -> dict:
     return merge_skills(agent, skills)
 
 
-async def plan_only(runtime: dict, goal: str, inputs: Optional[dict] = None) -> dict:
+async def plan_only(runtime: dict, goal: str, inputs: Optional[dict] = None, user_id: Optional[int] = None) -> dict:
     """dry-run：让 LLM 基于合并后的 persona 规划一次，返回拟调用的工具（含预估花费），不执行/不扣费。"""
     from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -157,7 +157,7 @@ async def plan_only(runtime: dict, goal: str, inputs: Optional[dict] = None) -> 
     allowed = set(runtime.get("allowed_plugins") or [])
     plugins = [p for p in all_plugins() if p.name in allowed]
     tool_map = {p.tool_name: p for p in plugins}
-    llm = get_llm().bind_tools([p.to_openai_tool() for p in plugins])
+    llm = get_llm(user_id=user_id).bind_tools([p.to_openai_tool() for p in plugins])
 
     user_text = goal if not inputs else f"{goal}\n\n[输入素材]{inputs}"
     resp = await llm.ainvoke([

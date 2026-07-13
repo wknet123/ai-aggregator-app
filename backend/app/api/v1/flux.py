@@ -103,7 +103,7 @@ async def process_flux_image_generation(
                 )
                 return
             
-            flux_client = FluxClient()
+            flux_client = FluxClient(user_id=user_id)
 
             # Update progress
             db_task.progress = 30

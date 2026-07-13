@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutGrid, CreditCard, Settings, ImageIcon, Video, Gem, X, Plus, Home, Compass, Layers, Sparkles, Film, Clapperboard, PersonStanding, Scissors, Bot } from 'lucide-react'
+import { LayoutGrid, CreditCard, Settings, ImageIcon, Video, Gem, X, Plus, Home, Compass, Layers, Sparkles, Film, Clapperboard, PersonStanding, Scissors, Bot, ShieldCheck } from 'lucide-react'
+import { useAuthStore } from '@/store/auth.store'
 
 interface SidebarProps {
   isOpen?: boolean
@@ -9,6 +10,7 @@ interface SidebarProps {
 export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { user } = useAuthStore()
 
   // Navigation group
   const navigationLinks = [
@@ -37,6 +39,11 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const otherLinks = [
     { to: '/credits', icon: Gem, label: '积分' },
     { to: '/settings', icon: Settings, label: '设置' },
+  ]
+
+  // Admin group - 仅管理员可见
+  const adminLinks = [
+    { to: '/admin/gateway', icon: ShieldCheck, label: '网关管理' },
   ]
 
   const handleLinkClick = () => {
@@ -164,6 +171,19 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
               {otherLinks.map(renderLink)}
             </ul>
           </div>
+
+          {/* Admin Section - 仅管理员 */}
+          {user?.is_admin && (
+            <>
+              <div className="border-t border-gray-800/50 my-3"></div>
+              <div>
+                <p className="sidebar-group-title">管理</p>
+                <ul className="space-y-0.5">
+                  {adminLinks.map(renderLink)}
+                </ul>
+              </div>
+            </>
+          )}
         </nav>
       </aside>
     </>

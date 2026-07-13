@@ -12,7 +12,7 @@ import logging
 import aiofiles
 
 from app.config import settings
-from app.integrations.gateway import get_gateway_client
+from app.integrations.gateway import get_gateway_client_for_user
 from app.integrations.google.client import ar_to_size
 
 logger = logging.getLogger(__name__)
@@ -21,9 +21,10 @@ logger = logging.getLogger(__name__)
 class FluxClient:
     """Image client backed by the aggregation gateway (wan)."""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, user_id: Optional[int] = None):
         # api_key kept for signature compatibility; the gateway token is used.
-        self.gateway = get_gateway_client()
+        # user_id 解析按用户映射的网关凭证（None → DB 默认组，见 resolve_for_user）。
+        self.gateway = get_gateway_client_for_user(user_id)
 
     async def generate_image(
         self,
