@@ -17,6 +17,8 @@ export interface User {
 export interface LoginRequest {
   username: string
   password: string
+  captcha_token?: string
+  captcha_answer?: string
 }
 
 export interface RegisterRequest {
@@ -25,6 +27,18 @@ export interface RegisterRequest {
   password: string
   full_name?: string
   tenant_name?: string
+  captcha_token?: string
+  captcha_answer?: string
+}
+
+export interface CaptchaData {
+  captcha_token: string
+  captcha_image: string
+}
+
+export interface ChangePasswordRequest {
+  current_password: string
+  new_password: string
 }
 
 export interface LoginResponse {

@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authService } from '@/services/auth.service'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { Sparkles, AlertTriangle } from 'lucide-react'
+import CaptchaField from '@/components/CaptchaField'
 
 export default function Register() {
   const navigate = useNavigate()
@@ -15,8 +16,30 @@ export default function Register() {
     full_name: '',
     tenant_name: '',
   })
+  const [captchaAnswer, setCaptchaAnswer] = useState('')
+  const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaImage, setCaptchaImage] = useState('')
+  const [captchaLoading, setCaptchaLoading] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const refreshCaptcha = async () => {
+    setCaptchaLoading(true)
+    try {
+      const data = await authService.getCaptcha()
+      setCaptchaToken(data.captcha_token)
+      setCaptchaImage(data.captcha_image)
+      setCaptchaAnswer('')
+    } catch {
+      // 静默失败；用户可点击刷新重试
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    refreshCaptcha()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,10 +47,15 @@ export default function Register() {
     setLoading(true)
 
     try {
-      await authService.register(formData)
+      await authService.register({
+        ...formData,
+        captcha_token: captchaToken,
+        captcha_answer: captchaAnswer,
+      })
       navigate('/login')
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Registration failed')
+      setError(err.response?.data?.detail || err.response?.data?.message || 'Registration failed')
+      refreshCaptcha()
     } finally {
       setLoading(false)
     }
@@ -116,6 +144,14 @@ export default function Register() {
                 onChange={(e) => setFormData({ ...formData, tenant_name: e.target.value })}
               />
             </div>
+
+            <CaptchaField
+              image={captchaImage}
+              answer={captchaAnswer}
+              onAnswerChange={setCaptchaAnswer}
+              onRefresh={refreshCaptcha}
+              loading={captchaLoading}
+            />
 
             <button
               type="submit"

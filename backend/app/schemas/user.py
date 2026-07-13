@@ -27,6 +27,12 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+class ChangePasswordRequest(BaseModel):
+    """Change password schema"""
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
+
+
 class UserInDB(UserBase):
     """User in database schema"""
     id: int

@@ -19,7 +19,12 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    
+
+    # Login/Register graphic CAPTCHA (stateless, HMAC-signed; no Redis needed)
+    CAPTCHA_ENABLED: bool = True          # 置 False 关闭校验（本地/自动化测试）
+    CAPTCHA_TTL_SECONDS: int = 300        # 验证码有效期（秒）
+    CAPTCHA_LENGTH: int = 4               # 验证码字符数
+
     # Database
     DATABASE_URL: str = "mysql+aiomysql://ai_user:Ai@User2024@db:3306/ai_aggregator"
     

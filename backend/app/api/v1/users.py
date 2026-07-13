@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.dependencies import get_current_active_user
 from app.models.user import User
-from app.schemas.user import UserResponse, UserUpdate
+from app.schemas.user import UserResponse, UserUpdate, ChangePasswordRequest
 from app.schemas.response import ResponseBase
 from app.repositories.user_repository import UserRepository
+from app.services.auth_service import AuthService
 
 
 router = APIRouter()
@@ -46,4 +47,22 @@ async def update_current_user(
         success=True,
         message="User updated successfully",
         data=UserResponse.model_validate(updated_user)
+    )
+
+
+@router.post("/me/change-password", response_model=ResponseBase[dict])
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """修改当前用户密码。成功后保持当前会话（不轮换 token）。"""
+    auth_service = AuthService(db)
+    await auth_service.change_password(
+        current_user, body.current_password, body.new_password
+    )
+    return ResponseBase(
+        success=True,
+        message="密码修改成功",
+        data={"changed": True},
     )

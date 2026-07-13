@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authService } from '@/services/auth.service'
 import { useAuthStore } from '@/store/auth.store'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { Rocket, AlertTriangle } from 'lucide-react'
+import CaptchaField from '@/components/CaptchaField'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -11,8 +12,30 @@ export default function Login() {
 
   const { setAuth } = useAuthStore()
   const [formData, setFormData] = useState({ username: '', password: '' })
+  const [captchaAnswer, setCaptchaAnswer] = useState('')
+  const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaImage, setCaptchaImage] = useState('')
+  const [captchaLoading, setCaptchaLoading] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const refreshCaptcha = async () => {
+    setCaptchaLoading(true)
+    try {
+      const data = await authService.getCaptcha()
+      setCaptchaToken(data.captcha_token)
+      setCaptchaImage(data.captcha_image)
+      setCaptchaAnswer('')
+    } catch {
+      // 静默失败；用户可点击刷新重试
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    refreshCaptcha()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,11 +43,16 @@ export default function Login() {
     setLoading(true)
 
     try {
-      const response = await authService.login(formData)
+      const response = await authService.login({
+        ...formData,
+        captcha_token: captchaToken,
+        captcha_answer: captchaAnswer,
+      })
       setAuth(response)
       navigate('/dashboard')
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed')
+      setError(err.response?.data?.detail || err.response?.data?.message || 'Login failed')
+      refreshCaptcha()
     } finally {
       setLoading(false)
     }
@@ -90,6 +118,14 @@ export default function Login() {
                 required
               />
             </div>
+
+            <CaptchaField
+              image={captchaImage}
+              answer={captchaAnswer}
+              onAnswerChange={setCaptchaAnswer}
+              onRefresh={refreshCaptcha}
+              loading={captchaLoading}
+            />
 
             <button
               type="submit"

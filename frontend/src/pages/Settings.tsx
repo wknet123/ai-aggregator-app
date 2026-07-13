@@ -56,6 +56,14 @@ export default function Settings() {
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileMsg, setProfileMsg] = useState('')
 
+  // Change password form
+  const [curPwd, setCurPwd] = useState('')
+  const [newPwd, setNewPwd] = useState('')
+  const [confirmPwd, setConfirmPwd] = useState('')
+  const [pwdSaving, setPwdSaving] = useState(false)
+  const [pwdMsg, setPwdMsg] = useState('')
+  const [pwdOk, setPwdOk] = useState(false)
+
   // Sync fullName when user data loads/changes (e.g. after zustand hydration)
   useEffect(() => {
     setFullName(user?.full_name || '')
@@ -111,6 +119,40 @@ export default function Settings() {
       setProfileMsg(err?.response?.data?.detail || '保存失败')
     } finally {
       setProfileSaving(false)
+    }
+  }
+
+  const handlePasswordChange = async () => {
+    setPwdMsg('')
+    if (!curPwd || !newPwd || !confirmPwd) {
+      setPwdOk(false)
+      setPwdMsg('请填写所有密码字段')
+      return
+    }
+    if (newPwd.length < 8) {
+      setPwdOk(false)
+      setPwdMsg('新密码至少 8 位')
+      return
+    }
+    if (newPwd !== confirmPwd) {
+      setPwdOk(false)
+      setPwdMsg('两次输入的新密码不一致')
+      return
+    }
+    setPwdSaving(true)
+    try {
+      await authService.changePassword({ current_password: curPwd, new_password: newPwd })
+      setPwdOk(true)
+      setPwdMsg('修改成功')
+      setCurPwd('')
+      setNewPwd('')
+      setConfirmPwd('')
+      setTimeout(() => setPwdMsg(''), 3000)
+    } catch (err: any) {
+      setPwdOk(false)
+      setPwdMsg(err?.response?.data?.detail || err?.response?.data?.message || '修改失败')
+    } finally {
+      setPwdSaving(false)
     }
   }
 
@@ -232,6 +274,66 @@ export default function Settings() {
                   {profileMsg && (
                     <span className={`text-sm ${profileMsg === '保存成功' ? 'text-green-400' : 'text-red-400'}`}>
                       {profileMsg}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Change Password */}
+            <div className="bg-[#16161a] border border-gray-800/50 rounded-2xl p-4 md:p-6 mb-4">
+              <h2 className="text-lg md:text-xl font-bold text-gray-100 mb-3 flex items-center gap-2">
+                <Key className="w-5 h-5 text-gray-400" strokeWidth={1.5} />
+                修改密码
+              </h2>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">当前密码</label>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    className="w-full px-4 py-2.5 bg-[#1a1a1f] border border-gray-700/50 rounded-xl text-gray-100 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/30 transition-all placeholder:text-gray-600 text-sm"
+                    value={curPwd}
+                    onChange={(e) => setCurPwd(e.target.value)}
+                    placeholder="请输入当前密码"
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">新密码</label>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      className="w-full px-4 py-2.5 bg-[#1a1a1f] border border-gray-700/50 rounded-xl text-gray-100 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/30 transition-all placeholder:text-gray-600 text-sm"
+                      value={newPwd}
+                      onChange={(e) => setNewPwd(e.target.value)}
+                      placeholder="至少 8 位"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">确认新密码</label>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      className="w-full px-4 py-2.5 bg-[#1a1a1f] border border-gray-700/50 rounded-xl text-gray-100 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/30 transition-all placeholder:text-gray-600 text-sm"
+                      value={confirmPwd}
+                      onChange={(e) => setConfirmPwd(e.target.value)}
+                      placeholder="再次输入新密码"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handlePasswordChange}
+                    disabled={pwdSaving}
+                    className="bg-gradient-to-r from-pink-500 to-purple-500 text-white px-6 py-2 rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-pink-500/20 transition-all disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {pwdSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                    修改密码
+                  </button>
+                  {pwdMsg && (
+                    <span className={`text-sm ${pwdOk ? 'text-green-400' : 'text-red-400'}`}>
+                      {pwdMsg}
                     </span>
                   )}
                 </div>
