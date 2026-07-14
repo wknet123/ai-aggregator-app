@@ -84,6 +84,9 @@ class Agent(Base):
     allowed_plugins = Column(JSON, nullable=True)   # Plugin 硬白名单
     # {max_steps, budget_limit, confirm_mode, confirm_cost_threshold, default_aspect_ratio, model}
     policy          = Column(JSON, nullable=True)
+    # 声明式「用户输入」定义（运行时据此渲染动态表单）：
+    # [{key,label,type(text|textarea|number|select|image),required,placeholder,options,help}]
+    input_schema    = Column(JSON, nullable=True)
 
     scope       = Column(String(20), default="private", index=True)  # system / tenant / private
     is_active   = Column(Integer, default=1)

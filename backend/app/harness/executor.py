@@ -31,7 +31,7 @@ from app.core.credits import InsufficientCreditsError
 from app.db.session import AsyncSessionLocal
 from app.harness.graph import build_graph, GraphCancelled, AgentState
 from app.harness.llm import get_llm
-from app.harness.agent_config import load_runtime, merge_skills, DEFAULT_AGENT
+from app.harness.agent_config import load_runtime, merge_skills, DEFAULT_AGENT, build_user_text
 from app.models.agent import AgentRun, AgentStep
 from app.plugins.base import PluginContext
 from app.plugins.registry import all_plugins, get_plugin, load_builtin_plugins
@@ -232,7 +232,7 @@ async def execute_run(run_id: str) -> None:
     builder = build_graph(llm, run_tool, check_cancelled, confirm_payload, record_skip)
 
     sys_prompt = runtime["persona"]
-    user_text = goal if not inputs else f"{goal}\n\n[输入素材]{inputs}"
+    user_text = build_user_text(goal, inputs, runtime.get("input_schema"))
     ckpt_path = os.path.join(_CKPT_DIR, f"{run_id}.sqlite")
     config = {
         "configurable": {"thread_id": run_id},

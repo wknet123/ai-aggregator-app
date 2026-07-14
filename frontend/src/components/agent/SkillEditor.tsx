@@ -1,14 +1,17 @@
 /**
  * SkillEditor —— 新建 / 编辑技能的弹窗表单。字段对齐后端 SkillBody。
- * instructions 是核心（会被合并进 Agent persona）。constraints 用结构化字段
- * （aspect_ratio / max_duration，对齐 executor._enforce_constraints 认的键）；
- * inputs/outputs/few_shot 一期用 JSON textarea 兜底，带解析校验。
+ *
+ * 技能 = 纯「方法论」：instructions（核心，会被引用它的智能体合并进 system prompt）
+ * + when_to_use（何时套用）+ constraints（画幅/时长）+ recommended_plugins（推荐插件）。
+ * 技能本身不单独运行，也不定义「用户输入」——那属于智能体层（Agent.input_schema）。
+ * inputs/outputs/few_shot 后端列保留，此处保存为空数组，不破坏历史数据。
  */
 import { useEffect, useState } from 'react'
-import { X, Loader2, Sparkles } from 'lucide-react'
+import { X, Loader2, Sparkles, Wand2, Info } from 'lucide-react'
 import {
   agentService, type SkillDef, type SkillBody, type PluginSpec,
 } from '../../services/agent.service'
+import { polishPrompt } from '../../services/prompt.service'
 
 interface Props {
   skill?: SkillDef | null            // 传入=编辑，否则=新建
@@ -18,6 +21,21 @@ interface Props {
 }
 
 const RATIOS = ['', '16:9', '9:16', '1:1']
+
+// 技能说明占位样例：既是「怎么写」的示范，也可作为 AI 润色的模板起点。
+const INSTRUCTIONS_SAMPLE = `你是一位电商带货短视频分镜师。当用户需要为某件商品制作带货短视频时套用本技能。
+
+工作方法：
+1. 先明确商品卖点与目标人群，提炼 1 个核心记忆点。
+2. 按「开场吸睛 → 痛点代入 → 卖点展示 → 促单行动」拆成 4 段分镜。
+3. 每段给出画面描述、镜头运动、时长建议，画面描述要具体到光线、构图、氛围。
+4. 需要出图时，把画面描述写得完整可直接生成。
+
+产出要求：
+- 分镜编号清晰，每段不超过 3 秒；
+- 整体风格统一、节奏紧凑，突出商品；
+- 避免夸大功效或违规词。`
+
 
 export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props) {
   const [name, setName] = useState('')
@@ -29,12 +47,10 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
   const [recommended, setRecommended] = useState<string[]>([])
   const [aspectRatio, setAspectRatio] = useState('')
   const [maxDuration, setMaxDuration] = useState<string>('')
-  const [inputsJson, setInputsJson] = useState('[]')
-  const [outputsJson, setOutputsJson] = useState('[]')
-  const [fewShotJson, setFewShotJson] = useState('[]')
   const [scope, setScope] = useState<'private' | 'tenant'>('private')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [polishing, setPolishing] = useState(false)
 
   useEffect(() => {
     if (skill) {
@@ -48,9 +64,6 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
       const c = skill.constraints || {}
       setAspectRatio(c.aspect_ratio || c.ratio || '')
       setMaxDuration(c.max_duration != null ? String(c.max_duration) : '')
-      setInputsJson(JSON.stringify(skill.inputs || [], null, 2))
-      setOutputsJson(JSON.stringify(skill.outputs || [], null, 2))
-      setFewShotJson(JSON.stringify(skill.few_shot || [], null, 2))
       setScope(skill.scope === 'tenant' ? 'tenant' : 'private')
     }
   }, [skill])
@@ -58,18 +71,24 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
   const toggle = (v: string) =>
     setRecommended((a) => (a.includes(v) ? a.filter((x) => x !== v) : [...a, v]))
 
+  // AI 润色技能说明：为空时以样例模板作为起点，让 AI 据此生成一版可用说明。
+  const handlePolish = async () => {
+    const base = instructions.trim() || INSTRUCTIONS_SAMPLE
+    setPolishing(true)
+    setError('')
+    try {
+      const polished = await polishPrompt(base, 'skill')
+      if (polished) setInstructions(polished)
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || e?.message || 'AI 润色失败，请稍后重试')
+    } finally {
+      setPolishing(false)
+    }
+  }
+
   const handleSave = async () => {
     if (!name.trim() || !instructions.trim()) {
       setError('名称与技能说明（instructions）不能为空')
-      return
-    }
-    let inputs: any[], outputs: any[], fewShot: any[]
-    try {
-      inputs = JSON.parse(inputsJson || '[]')
-      outputs = JSON.parse(outputsJson || '[]')
-      fewShot = JSON.parse(fewShotJson || '[]')
-    } catch (e: any) {
-      setError('inputs/outputs/few_shot 必须是合法 JSON 数组：' + (e?.message || ''))
       return
     }
     const constraints: Record<string, any> = {}
@@ -88,7 +107,7 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
       description: description.trim() || null,
       when_to_use: whenToUse.trim() || null,
       recommended_plugins: recommended,
-      inputs, outputs, few_shot: fewShot,
+      inputs: [], outputs: [], few_shot: [],
       constraints, scope,
     }
     try {
@@ -104,10 +123,9 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
       <div
         className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#16161a] rounded-2xl border border-gray-800/60 p-6"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="flex items-center gap-2 text-lg font-bold text-gray-100">
@@ -120,6 +138,14 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
         </div>
 
         {error && <div className="mb-3 text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2">{error}</div>}
+
+        <div className="mb-4 flex gap-2 text-xs text-gray-400 bg-blue-500/[0.07] border border-blue-500/20 rounded-lg px-3 py-2 leading-relaxed">
+          <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+          <span>
+            技能是一套「方法论」，本身不单独运行。需被智能体在其「引用技能」中选用后，
+            运行时由智能体依据「何时使用」自主套用其说明。这里不定义用户输入——那属于智能体的「运行输入」。
+          </span>
+        </div>
 
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-3">
@@ -138,14 +164,26 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
             <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="一句话说明" />
           </Field>
 
-          <Field label="何时使用（可选）">
-            <input className="input" value={whenToUse} onChange={(e) => setWhenToUse(e.target.value)} placeholder="适用场景描述" />
+          <Field label="何时使用 When to use（可选）">
+            <input className="input" value={whenToUse} onChange={(e) => setWhenToUse(e.target.value)}
+              placeholder="如：需要为商品制作带货短视频时。供引用本技能的智能体判断何时套用。" />
           </Field>
 
           <Field label="技能说明 Instructions *">
+            <div className="flex items-center justify-end mb-1.5">
+              <button type="button" onClick={handlePolish} disabled={polishing}
+                title={instructions.trim() ? '让 AI 润色当前技能说明' : '以样例模板为起点，让 AI 生成一版技能说明'}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 disabled:opacity-60">
+                {polishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                {polishing ? '润色中...' : (instructions.trim() ? 'AI 润色' : 'AI 生成样例')}
+              </button>
+            </div>
             <textarea className="input min-h-[140px] font-mono text-xs" value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-              placeholder="会被合并进智能体 persona 的具体方法论 / 步骤 / 约束..." />
+              placeholder={INSTRUCTIONS_SAMPLE} />
+            <p className="text-[11px] text-gray-600 mt-1">
+              留空时点「AI 生成样例」将以上方占位样例为模板生成；已填写则对当前内容润色。
+            </p>
           </Field>
 
           <Field label={`推荐 Plugin（多选，${recommended.length} 选中）`}>
@@ -170,24 +208,6 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
                 onChange={(e) => setMaxDuration(e.target.value)} placeholder="留空=不限制" />
             </Field>
           </div>
-
-          <details className="rounded-lg border border-gray-800/60 p-3">
-            <summary className="text-xs text-gray-400 cursor-pointer">高级：inputs / outputs / few_shot（JSON）</summary>
-            <div className="grid md:grid-cols-3 gap-3 mt-3">
-              <Field label="inputs (JSON)">
-                <textarea className="input min-h-[90px] font-mono text-xs" value={inputsJson}
-                  onChange={(e) => setInputsJson(e.target.value)} />
-              </Field>
-              <Field label="outputs (JSON)">
-                <textarea className="input min-h-[90px] font-mono text-xs" value={outputsJson}
-                  onChange={(e) => setOutputsJson(e.target.value)} />
-              </Field>
-              <Field label="few_shot (JSON)">
-                <textarea className="input min-h-[90px] font-mono text-xs" value={fewShotJson}
-                  onChange={(e) => setFewShotJson(e.target.value)} />
-              </Field>
-            </div>
-          </details>
 
           <Field label="可见范围">
             <select className="input" value={scope} onChange={(e) => setScope(e.target.value as any)}>

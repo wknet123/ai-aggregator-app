@@ -40,6 +40,10 @@ class ImageGeneratePlugin(BasePlugin):
                 "default": "1:1",
                 "description": "画面比例",
             },
+            "image_key": {
+                "type": "string",
+                "description": "参考图的存储 key（做图生图/以图改图时提供；用户上传或前序产物的 key）。不提供则为纯文生图。",
+            },
         },
         "required": ["prompt"],
     }
@@ -51,8 +55,14 @@ class ImageGeneratePlugin(BasePlugin):
         ratio = params.get("aspect_ratio", "1:1")
         size = _RATIO_SIZE.get(ratio, "1024*1024")
 
-        # 1) 调 gateway 生图 → 拿结果 URL
-        urls = await ctx.gateway.generate_image(prompt, size=size, n=1)
+        # 0) 可选参考图：读取字节做图生图（底层 gateway.generate_image 支持 image 入参）
+        ref_image = None
+        image_key = (params.get("image_key") or "").strip()
+        if image_key:
+            ref_image, _ = await ctx.storage.get_object_bytes(image_key)
+
+        # 1) 调 gateway 生图（有参考图则为图生图）→ 拿结果 URL
+        urls = await ctx.gateway.generate_image(prompt, size=size, n=1, image=ref_image)
         if not urls:
             raise RuntimeError("gateway 未返回图片")
 
@@ -60,15 +70,18 @@ class ImageGeneratePlugin(BasePlugin):
         data = await ctx.gateway.fetch_bytes(urls[0])
         key = ctx.storage.agent_artifact_key(ctx.user_id, ctx.run_id, f"img_{uuid.uuid4().hex}.png")
         await ctx.storage.upload_bytes(data, key, "image/png")
-        logger.info("image.generate → %s (%d bytes)", key, len(data))
+        logger.info("image.generate → %s (%d bytes, i2i=%s)", key, len(data), bool(image_key))
 
         # 3) 结构化产物（回喂 LLM 的是 note 文本 + 引用；LLM 看不到图本身——P0-a 无视觉）
+        note = f"已生成图片（{ratio}），提示词：{prompt[:60]}"
+        if image_key:
+            note = f"已基于参考图生成图片（{ratio}），提示词：{prompt[:60]}"
         return PluginResult(
             artifact={
                 "type": "image",
                 "key": key,
                 "aspect_ratio": ratio,
-                "note": f"已生成图片（{ratio}），提示词：{prompt[:60]}",
+                "note": note,
             },
             cost=0,
         )

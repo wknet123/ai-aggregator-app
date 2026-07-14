@@ -37,6 +37,7 @@ def _agent_to_dict(a) -> dict:
         "agent_id": a.agent_id, "name": a.name, "persona": a.persona or "",
         "skill_ids": a.skill_ids or [], "allowed_plugins": a.allowed_plugins or [],
         "policy": a.policy or {}, "scope": a.scope,
+        "input_schema": a.input_schema or [],
     }
 
 
@@ -113,6 +114,7 @@ def merge_skills(agent: dict, skills: list[dict]) -> dict:
         "recommended_plugins": recommended,
         "policy": policy,
         "constraints": constraints,
+        "input_schema": agent.get("input_schema") or [],
     }
 
 
@@ -146,6 +148,41 @@ async def load_runtime(db, agent_key: Optional[str], tenant_id: int) -> dict:
     return merge_skills(agent, skills)
 
 
+def _looks_like_image_key(val) -> bool:
+    return isinstance(val, str) and ("/uploads/" in val or "/agents/" in val) and (
+        val.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"))
+    )
+
+
+def build_user_text(goal: str, inputs: Optional[dict], input_schema: Optional[list]) -> str:
+    """把用户目标 + 结构化输入拼成给 LLM 的 human 文本。
+
+    按 input_schema 渲染带标签的输入清单；图片类字段（或看起来是图片 key 的值）显式标注
+    image_key=...，提示 LLM 可将其作为 image.generate / video.image_to_video 的输入图。
+    无 input_schema 时退化为原始 [输入素材]{inputs} 拼接（向后兼容旧 Run）。
+    """
+    if not inputs:
+        return goal
+
+    schema = {f.get("key"): f for f in (input_schema or []) if isinstance(f, dict) and f.get("key")}
+    lines: list[str] = []
+    for key, val in inputs.items():
+        if val is None or val == "":
+            continue
+        field = schema.get(key) or {}
+        label = field.get("label") or key
+        is_image = field.get("type") == "image" or _looks_like_image_key(val)
+        if is_image:
+            lines.append(f"- {label}（参考图 image_key={val}）：可作为 image.generate / "
+                         f"video.image_to_video 的输入图（传入 image_key 参数）")
+        else:
+            lines.append(f"- {label}：{val}")
+
+    if not lines:
+        return goal
+    return f"{goal}\n\n[输入素材]\n" + "\n".join(lines)
+
+
 async def plan_only(runtime: dict, goal: str, inputs: Optional[dict] = None, user_id: Optional[int] = None) -> dict:
     """dry-run：让 LLM 基于合并后的 persona 规划一次，返回拟调用的工具（含预估花费），不执行/不扣费。"""
     from langchain_core.messages import SystemMessage, HumanMessage
@@ -159,7 +196,7 @@ async def plan_only(runtime: dict, goal: str, inputs: Optional[dict] = None, use
     tool_map = {p.tool_name: p for p in plugins}
     llm = get_llm(user_id=user_id).bind_tools([p.to_openai_tool() for p in plugins])
 
-    user_text = goal if not inputs else f"{goal}\n\n[输入素材]{inputs}"
+    user_text = build_user_text(goal, inputs, runtime.get("input_schema"))
     resp = await llm.ainvoke([
         SystemMessage(content=runtime["persona"]),
         HumanMessage(content=user_text),

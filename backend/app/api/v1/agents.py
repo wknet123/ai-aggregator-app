@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,6 +49,7 @@ class AgentBody(BaseModel):
     skill_ids: Optional[list[str]] = None
     allowed_plugins: Optional[list[str]] = None
     policy: Optional[dict] = None
+    input_schema: Optional[list] = None             # 声明式用户输入字段定义
     scope: str = "private"                          # private / tenant（system 仅播种）
 
 
@@ -310,6 +311,61 @@ async def get_run_artifact(
     )
 
 
+@router.post("/uploads", response_model=ResponseBase)
+async def upload_run_input(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """上传 Run 输入素材（图片）到 MinIO，返回其 key，供运行表单填入 inputs。
+
+    仅接受图片；存到 users/{uid}/uploads/agent-inputs/{uuid}.{ext}。key 属用户私有，
+    经 GET /uploads/file 鉴权预览（不可直连 minio）。
+    """
+    from app.services.storage import get_storage_service, StorageService
+
+    content_type = (file.content_type or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="仅支持上传图片文件")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="文件为空")
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="图片过大（上限 15MB）")
+
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "png"
+    if ext not in ("png", "jpg", "jpeg", "webp", "gif", "bmp"):
+        ext = "png"
+    filename = f"agent-inputs/{uuid.uuid4().hex}.{ext}"
+    key = get_storage_service().user_upload_key(current_user.id, filename)
+    ct = StorageService.content_type_for(filename) or content_type or "image/png"
+    await get_storage_service().upload_bytes(data, key, ct)
+    return ResponseBase(success=True, message="已上传", data={"key": key, "content_type": ct})
+
+
+@router.get("/uploads/file")
+async def get_upload_file(
+    key: str,
+    current_user: User = Depends(get_current_user),
+):
+    """鉴权预览用户上传的输入素材。key 必须落在本人 uploads 目录内。"""
+    prefix = f"users/{current_user.id}/uploads/"
+    if not key.startswith(prefix) or ".." in key:
+        raise HTTPException(status_code=400, detail="非法素材 key")
+
+    from fastapi.responses import Response
+    from app.services.storage import get_storage_service
+    try:
+        data, content_type = await get_storage_service().get_object_bytes(key)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail=f"素材不存在: {exc}")
+    return Response(
+        content=data,
+        media_type=content_type or "application/octet-stream",
+        headers={"Cache-Control": "private, max-age=3600", "Accept-Ranges": "bytes"},
+    )
+
+
 @router.get("/runs", response_model=ResponseBase)
 async def list_runs(
     current_user: User = Depends(get_current_user),
@@ -335,6 +391,7 @@ def _agent_out(a: Agent) -> dict:
         "agent_id": a.agent_id, "name": a.name, "description": a.description,
         "avatar": a.avatar, "persona": a.persona, "skill_ids": a.skill_ids or [],
         "allowed_plugins": a.allowed_plugins or [], "policy": a.policy or {},
+        "input_schema": a.input_schema or [],
         "scope": a.scope, "is_active": a.is_active,
         "created_at": a.created_at.isoformat() if a.created_at else None,
         "updated_at": a.updated_at.isoformat() if a.updated_at else None,
@@ -350,6 +407,39 @@ def _skill_out(s: Skill) -> dict:
         "scope": s.scope, "version": s.version,
         "updated_at": s.updated_at.isoformat() if s.updated_at else None,
     }
+
+
+_INPUT_FIELD_TYPES = {"text", "textarea", "number", "select", "image"}
+
+
+def _normalize_input_schema(raw: Optional[list]) -> list:
+    """清洗声明式输入字段定义：保留合法字段、去重 key、限制类型。"""
+    if not raw:
+        return []
+    out, seen = [], set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        ftype = item.get("type") if item.get("type") in _INPUT_FIELD_TYPES else "text"
+        field = {
+            "key": key,
+            "label": str(item.get("label") or key).strip(),
+            "type": ftype,
+            "required": bool(item.get("required")),
+        }
+        if item.get("placeholder"):
+            field["placeholder"] = str(item["placeholder"])
+        if item.get("help"):
+            field["help"] = str(item["help"])
+        if ftype == "select":
+            opts = [str(o).strip() for o in (item.get("options") or []) if str(o).strip()]
+            field["options"] = opts
+        out.append(field)
+    return out
 
 
 def _validate_plugins(names: Optional[list[str]]) -> list[str]:
@@ -407,6 +497,7 @@ async def create_agent(
         skill_ids=body.skill_ids or [], allowed_plugins=allowed,
         policy=body.policy or {"max_steps": 6, "budget_limit": 100,
                                "confirm_cost_threshold": 1, "confirm_mode": "auto"},
+        input_schema=_normalize_input_schema(body.input_schema),
         scope=scope, is_active=1,
     )
     db.add(agent)
@@ -565,6 +656,8 @@ async def update_agent(
         a.allowed_plugins = _validate_plugins(body.allowed_plugins)
     if body.policy is not None:
         a.policy = body.policy
+    if body.input_schema is not None:
+        a.input_schema = _normalize_input_schema(body.input_schema)
     if body.scope in ("private", "tenant"):
         a.scope = body.scope
     await db.commit()

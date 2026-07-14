@@ -57,6 +57,10 @@ _COLUMN_MIGRATIONS = {
         # P1-a：Run 启动时的合并后运行配置快照。
         "agent_snapshot": "JSON NULL",
     },
+    "agents": {
+        # 声明式「用户输入」定义：运行时据此渲染动态表单（含图片上传字段）。
+        "input_schema": "JSON NULL",
+    },
     "users": {
         # 多组网关：用户→网关配置映射（NULL=默认组）。create_all 不改已存在的 users 表。
         "gateway_config_id": "INT NULL",

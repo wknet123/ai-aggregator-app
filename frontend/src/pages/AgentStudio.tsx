@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react'
 import {
-  Bot, Sparkles, ListVideo, Plus, Play, FlaskConical, Pencil, Trash2, Loader2, Lock,
+  Bot, Sparkles, ListVideo, Plus, Play, FlaskConical, Pencil, Trash2, Loader2, Lock, X,
 } from 'lucide-react'
 import Header from '../components/layout/Header'
 import Sidebar from '../components/layout/Sidebar'
@@ -21,6 +21,7 @@ import {
 import AgentEditor from '../components/agent/AgentEditor'
 import SkillEditor from '../components/agent/SkillEditor'
 import RunDetail from '../components/agent/RunDetail'
+import RunInputsForm from '../components/agent/RunInputsForm'
 
 type Tab = 'agents' | 'skills' | 'runs'
 
@@ -60,7 +61,7 @@ export default function AgentStudio() {
   const [selectedRun, setSelectedRun] = useState<string>('')
   const [runAgentKey, setRunAgentKey] = useState('default')
   const [runGoal, setRunGoal] = useState('')
-  const [runInputs, setRunInputs] = useState('')
+  const [runFieldValues, setRunFieldValues] = useState<Record<string, any>>({})
   const [runConfirmMode, setRunConfirmMode] = useState<'' | 'auto' | 'checkpoint' | 'step'>('')
   const [starting, setStarting] = useState(false)
 
@@ -107,6 +108,7 @@ export default function AgentStudio() {
 
   const handleRunAgent = (a: AgentDef) => {
     setRunAgentKey(agentKeyOf(a))
+    setRunFieldValues({})
     setTab('runs')
     setSelectedRun('')
   }
@@ -125,23 +127,32 @@ export default function AgentStudio() {
   }
 
   // ── 发起 Run ───────────────────────────────────────────────────────────────
+  const runAgent = agents.find((a) => agentKeyOf(a) === runAgentKey)
+  const runFields = runAgent?.input_schema || []
+
   const startRun = async () => {
     if (!runGoal.trim()) { setError('目标（goal）不能为空'); return }
-    let inputs: any = null
-    if (runInputs.trim()) {
-      try { inputs = JSON.parse(runInputs) }
-      catch (e: any) { setError('inputs 必须是合法 JSON：' + (e?.message || '')); return }
+    // 按 input_schema 校验必填 + 组装 inputs
+    const inputs: Record<string, any> = {}
+    for (const f of runFields) {
+      const v = runFieldValues[f.key]
+      const empty = v === undefined || v === null || v === ''
+      if (f.required && empty) {
+        setError(`请填写必填项：${f.label || f.key}`)
+        return
+      }
+      if (!empty) inputs[f.key] = v
     }
     setStarting(true)
     setError('')
     try {
       const { run_id } = await agentService.createRun({
         goal: runGoal.trim(),
-        inputs,
+        inputs: Object.keys(inputs).length ? inputs : null,
         agent_key: runAgentKey,
         confirm_mode: runConfirmMode || undefined,
       })
-      setRunGoal(''); setRunInputs('')
+      setRunGoal(''); setRunFieldValues({})
       setSelectedRun(run_id)
       await reloadRuns()
     } catch (e: any) {
@@ -295,7 +306,8 @@ export default function AgentStudio() {
                   <h3 className="text-sm font-semibold text-gray-200 mb-3">发起新 Run</h3>
                   <label className="block mb-2">
                     <span className="block text-xs text-gray-400 mb-1">智能体</span>
-                    <select className="input" value={runAgentKey} onChange={(e) => setRunAgentKey(e.target.value)}>
+                    <select className="input" value={runAgentKey}
+                      onChange={(e) => { setRunAgentKey(e.target.value); setRunFieldValues({}) }}>
                       {agents.map((a) => <option key={a.agent_id} value={agentKeyOf(a)}>{a.name}</option>)}
                     </select>
                   </label>
@@ -304,11 +316,12 @@ export default function AgentStudio() {
                     <textarea className="input min-h-[70px] text-sm" value={runGoal}
                       onChange={(e) => setRunGoal(e.target.value)} placeholder="想让智能体完成什么..." />
                   </label>
-                  <label className="block mb-2">
-                    <span className="block text-xs text-gray-400 mb-1">输入 inputs（JSON，可选）</span>
-                    <textarea className="input min-h-[50px] font-mono text-xs" value={runInputs}
-                      onChange={(e) => setRunInputs(e.target.value)} placeholder='{"image_key": "..."}' />
-                  </label>
+                  {runFields.length > 0 && (
+                    <div className="mb-2">
+                      <span className="block text-xs text-gray-400 mb-1">输入素材</span>
+                      <RunInputsForm fields={runFields} values={runFieldValues} onChange={setRunFieldValues} />
+                    </div>
+                  )}
                   <label className="block mb-3">
                     <span className="block text-xs text-gray-400 mb-1">确认模式（不选=用智能体默认）</span>
                     <select className="input" value={runConfirmMode} onChange={(e) => setRunConfirmMode(e.target.value as any)}>
@@ -387,12 +400,16 @@ export default function AgentStudio() {
 
       {/* dry-run 面板 */}
       {dryOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={() => setDryOpen(false)}>
-          <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto bg-[#16161a] rounded-2xl border border-gray-800/60 p-6"
-            onClick={(e) => e.stopPropagation()}>
-            <h2 className="flex items-center gap-2 text-lg font-bold text-gray-100 mb-1">
-              <FlaskConical className="w-5 h-5 text-blue-400" />干跑预估（dry-run）
-            </h2>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto bg-[#16161a] rounded-2xl border border-gray-800/60 p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="flex items-center gap-2 text-lg font-bold text-gray-100">
+                <FlaskConical className="w-5 h-5 text-blue-400" />干跑预估（dry-run）
+              </h2>
+              <button onClick={() => setDryOpen(false)} className="p-1.5 hover:bg-white/10 rounded-lg">
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
             <p className="text-xs text-gray-500 mb-4">只让智能体规划一次，返回拟调用工具与预估花费。<b className="text-gray-400">不建 Run、不执行、不扣费。</b></p>
             <label className="block mb-2">
               <span className="block text-xs text-gray-400 mb-1">智能体</span>

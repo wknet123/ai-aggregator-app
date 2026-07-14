@@ -189,10 +189,38 @@ _POLISH_SYSTEM_DRAMA = (
     "- 用中文输出"
 )
 
+_POLISH_SYSTEM_SKILL = (
+    "你是一位 AI 智能体「技能」设计专家。技能说明（instructions）是一段会被注入智能体"
+    "system prompt 的方法论提示词，用来规范智能体在某类创作任务中的工作方式。\n"
+    "用户会给你一段简短的技能说明草稿（或模板样例），你需要将其润色扩写成结构清晰、"
+    "可直接使用的技能说明。\n\n"
+    "要求：\n"
+    "- 保留用户原始意图与领域，不改变技能主题\n"
+    "- 用祈使句写给「智能体」，明确角色定位、适用场景、分步骤的工作方法与产出要求\n"
+    "- 可包含质量约束与注意事项，但不要编造具体的插件/工具名\n"
+    "- 用分点或小标题组织，条理清晰，篇幅控制在 150-400 字\n"
+    "- 只返回润色后的技能说明正文，不要任何前后缀、解释或引号\n"
+    "- 用中文输出"
+)
+
+_POLISH_SYSTEM_AGENT = (
+    "你是一位 AI 智能体「人设」设计专家。人设（persona）是一段会作为智能体 system prompt "
+    "的角色设定，用来定义这个智能体是谁、目标是什么、怎么工作、有哪些边界。\n"
+    "用户会给你一段简短的人设草稿（或模板样例），你需要将其润色扩写成结构清晰、"
+    "可直接使用的智能体人设。\n\n"
+    "要求：\n"
+    "- 保留用户原始意图与领域，不改变智能体的角色定位\n"
+    "- 用第二人称「你是……」写给智能体本身，明确：角色定位、核心目标、工作方式与风格、行为边界\n"
+    "- 侧重「是谁/做什么/怎么做」的整体设定，不要写成分镜/画面提示词，也不要编造具体插件/工具名\n"
+    "- 可分点或小标题组织，条理清晰，篇幅控制在 150-400 字\n"
+    "- 只返回润色后的人设正文，不要任何前后缀、解释或引号\n"
+    "- 用中文输出"
+)
+
 
 class PolishRequest(BaseModel):
     prompt: str
-    category: str = "image"   # "image" | "video" | "drama"
+    category: str = "image"   # "image" | "video" | "drama" | "skill" | "agent"
 
 
 class PolishResponse(BaseModel):
@@ -213,7 +241,9 @@ async def polish_prompt(
         raise HTTPException(status_code=400, detail="prompt is empty")
 
     is_drama = body.category == "drama"
-    max_len = 800 if is_drama else 500
+    is_skill = body.category == "skill"
+    is_agent = body.category == "agent"
+    max_len = 800 if (is_drama or is_skill or is_agent) else 500
     if len(raw) > max_len:
         raise HTTPException(status_code=400, detail="prompt too long")
 
@@ -224,6 +254,14 @@ async def polish_prompt(
         system_prompt = _POLISH_SYSTEM_DRAMA
         user_msg = f"请润色以下短剧故事概念：\n\n{raw}"
         max_tokens = 500
+    elif is_skill:
+        system_prompt = _POLISH_SYSTEM_SKILL
+        user_msg = f"请润色以下智能体技能说明：\n\n{raw}"
+        max_tokens = 700
+    elif is_agent:
+        system_prompt = _POLISH_SYSTEM_AGENT
+        user_msg = f"请润色以下智能体人设：\n\n{raw}"
+        max_tokens = 700
     else:
         system_prompt = _POLISH_SYSTEM_IMAGE
         category_hint = "视频" if body.category == "video" else "图像"

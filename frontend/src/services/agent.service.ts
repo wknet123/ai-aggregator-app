@@ -16,6 +16,18 @@ export interface AgentPolicy {
   confirm_mode?: 'auto' | 'checkpoint' | 'step'
 }
 
+// 声明式「用户输入」字段定义（配置时编排，运行时渲染动态表单）
+export type InputFieldType = 'text' | 'textarea' | 'number' | 'select' | 'image'
+export interface InputField {
+  key: string
+  label: string
+  type: InputFieldType
+  required?: boolean
+  placeholder?: string
+  help?: string
+  options?: string[]        // type=select 时的候选项
+}
+
 export interface AgentDef {
   agent_id: string
   name: string
@@ -25,6 +37,7 @@ export interface AgentDef {
   skill_ids: string[]
   allowed_plugins: string[]
   policy: AgentPolicy
+  input_schema: InputField[]
   scope: 'system' | 'tenant' | 'private'
   is_active: number
   created_at?: string | null
@@ -39,6 +52,7 @@ export interface AgentBody {
   skill_ids?: string[]
   allowed_plugins?: string[]
   policy?: AgentPolicy
+  input_schema?: InputField[]
   scope?: 'private' | 'tenant'
 }
 
@@ -246,6 +260,25 @@ class AgentService {
   // ── 产物取流（鉴权 blob → objectURL；调用方负责 revokeObjectURL）─────────────
   async artifactObjectUrl(runId: string, key: string): Promise<string> {
     const r = await apiClient.get(`/api/v1/agents/runs/${runId}/artifact`, {
+      params: { key },
+      responseType: 'blob',
+    })
+    return URL.createObjectURL(r.data as Blob)
+  }
+
+  // ── Run 输入素材上传（图片 → MinIO，返回 key 填入 inputs）─────────────────────
+  async uploadRunInput(file: File): Promise<{ key: string; content_type: string }> {
+    const form = new FormData()
+    form.append('file', file)
+    const r = await apiClient.post('/api/v1/agents/uploads', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return r.data.data
+  }
+
+  // ── 上传素材鉴权预览（blob → objectURL；调用方负责 revokeObjectURL）───────────
+  async uploadFileObjectUrl(key: string): Promise<string> {
+    const r = await apiClient.get('/api/v1/agents/uploads/file', {
       params: { key },
       responseType: 'blob',
     })
