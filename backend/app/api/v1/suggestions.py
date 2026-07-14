@@ -217,10 +217,23 @@ _POLISH_SYSTEM_AGENT = (
     "- 用中文输出"
 )
 
+_POLISH_SYSTEM_GOAL = (
+    "你是一位 AI 智能体任务需求分析师。运行目标（goal）是用户下达给智能体的一次性任务指令，"
+    "智能体会据此自主创作并产出图片/视频等成品。\n"
+    "用户会给你一段简短的目标草稿（或模板样例），你需要将其润色成清晰、具体、可执行的任务指令。\n\n"
+    "要求：\n"
+    "- 保留用户原始意图，不改变任务主题\n"
+    "- 补全关键要素：想要什么产物、主体/场景/风格、数量或时长、用途等，使指令明确可执行\n"
+    "- 用一段自然通顺的中文陈述，不要写成分镜脚本或系统提示词，也不要编造具体插件/工具名\n"
+    "- 篇幅控制在 40-150 字\n"
+    "- 只返回润色后的目标文本，不要任何前后缀、解释或引号\n"
+    "- 用中文输出"
+)
+
 
 class PolishRequest(BaseModel):
     prompt: str
-    category: str = "image"   # "image" | "video" | "drama" | "skill" | "agent"
+    category: str = "image"   # "image" | "video" | "drama" | "skill" | "agent" | "goal"
 
 
 class PolishResponse(BaseModel):
@@ -243,7 +256,8 @@ async def polish_prompt(
     is_drama = body.category == "drama"
     is_skill = body.category == "skill"
     is_agent = body.category == "agent"
-    max_len = 800 if (is_drama or is_skill or is_agent) else 500
+    is_goal = body.category == "goal"
+    max_len = 800 if (is_drama or is_skill or is_agent or is_goal) else 500
     if len(raw) > max_len:
         raise HTTPException(status_code=400, detail="prompt too long")
 
@@ -262,6 +276,10 @@ async def polish_prompt(
         system_prompt = _POLISH_SYSTEM_AGENT
         user_msg = f"请润色以下智能体人设：\n\n{raw}"
         max_tokens = 700
+    elif is_goal:
+        system_prompt = _POLISH_SYSTEM_GOAL
+        user_msg = f"请润色以下智能体运行目标：\n\n{raw}"
+        max_tokens = 400
     else:
         system_prompt = _POLISH_SYSTEM_IMAGE
         category_hint = "视频" if body.category == "video" else "图像"

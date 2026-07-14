@@ -24,7 +24,7 @@ export async function getQuickPrompts(
 
 export async function polishPrompt(
   prompt: string,
-  category: 'image' | 'video' | 'drama' | 'skill' | 'agent' = 'image'
+  category: 'image' | 'video' | 'drama' | 'skill' | 'agent' | 'goal' = 'image'
 ): Promise<string> {
   const { data } = await apiClient.post<{ polished: string }>(
     '/api/v1/suggestions/polish-prompt',

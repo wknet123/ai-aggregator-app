@@ -38,6 +38,8 @@ const INSTRUCTIONS_SAMPLE = `你是一位电商带货短视频分镜师。当用
 
 
 export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props) {
+  const isSystem = skill?.scope === 'system'   // 系统内置：只读查看 + 另存为私有副本
+
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
   const [icon, setIcon] = useState('')
@@ -54,7 +56,8 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
 
   useEffect(() => {
     if (skill) {
-      setName(skill.name || '')
+      const sys = skill.scope === 'system'
+      setName(sys ? `${skill.name || ''} 副本` : (skill.name || ''))
       setCategory(skill.category || '')
       setIcon(skill.icon || '')
       setDescription(skill.description || '')
@@ -64,7 +67,8 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
       const c = skill.constraints || {}
       setAspectRatio(c.aspect_ratio || c.ratio || '')
       setMaxDuration(c.max_duration != null ? String(c.max_duration) : '')
-      setScope(skill.scope === 'tenant' ? 'tenant' : 'private')
+      // 系统技能不能改本体，副本默认落为私有
+      setScope(sys ? 'private' : (skill.scope === 'tenant' ? 'tenant' : 'private'))
     }
   }, [skill])
 
@@ -111,7 +115,8 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
       constraints, scope,
     }
     try {
-      const saved = skill
+      // 系统内置技能只读：保存时不改本体，而是为当前用户另存为私有副本（fork）。
+      const saved = (skill && !isSystem)
         ? await agentService.updateSkill(skill.skill_id, body)
         : await agentService.createSkill(body)
       onSaved(saved)
@@ -130,7 +135,7 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
         <div className="flex items-center justify-between mb-4">
           <h2 className="flex items-center gap-2 text-lg font-bold text-gray-100">
             <Sparkles className="w-5 h-5 text-pink-400" />
-            {skill ? '编辑技能' : '新建技能'}
+            {isSystem ? '查看系统技能（另存为副本）' : (skill ? '编辑技能' : '新建技能')}
           </h2>
           <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-lg">
             <X className="w-5 h-5 text-gray-400" />
@@ -138,6 +143,16 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
         </div>
 
         {error && <div className="mb-3 text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2">{error}</div>}
+
+        {isSystem && (
+          <div className="mb-3 flex gap-2 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/25 rounded-lg px-3 py-2 leading-relaxed">
+            <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <span>
+              这是系统内置技能，不可直接修改。你可在此查看内容并按需调整，保存后将
+              <b className="text-amber-100">另存为你的私有副本</b>（不影响系统技能本体）。
+            </span>
+          </div>
+        )}
 
         <div className="mb-4 flex gap-2 text-xs text-gray-400 bg-blue-500/[0.07] border border-blue-500/20 rounded-lg px-3 py-2 leading-relaxed">
           <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
@@ -221,7 +236,7 @@ export default function SkillEditor({ skill, plugins, onClose, onSaved }: Props)
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-gray-300 hover:bg-white/10">取消</button>
           <button onClick={handleSave} disabled={saving}
             className="px-5 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-pink-500 to-purple-500 text-white disabled:opacity-60 flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}保存
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}{isSystem ? '另存为副本' : '保存'}
           </button>
         </div>
       </div>

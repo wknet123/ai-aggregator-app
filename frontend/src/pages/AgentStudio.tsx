@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react'
 import {
-  Bot, Sparkles, ListVideo, Plus, Play, FlaskConical, Pencil, Trash2, Loader2, Lock, X,
+  Bot, Sparkles, ListVideo, Plus, Play, FlaskConical, Pencil, Trash2, Loader2, Lock, X, Copy, Wand2,
 } from 'lucide-react'
 import Header from '../components/layout/Header'
 import Sidebar from '../components/layout/Sidebar'
@@ -18,6 +18,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import {
   agentService, type AgentDef, type SkillDef, type PluginSpec, type AgentRun, type DryRunResult,
 } from '../services/agent.service'
+import { polishPrompt } from '../services/prompt.service'
 import AgentEditor from '../components/agent/AgentEditor'
 import SkillEditor from '../components/agent/SkillEditor'
 import RunDetail from '../components/agent/RunDetail'
@@ -30,6 +31,11 @@ const CONFIRM_MODES = [
   { value: 'checkpoint', label: '检查点（高花费步挂起）' },
   { value: 'step', label: '逐步（每步挂起）' },
 ]
+
+// 运行目标占位样例：示范「怎么写目标」，也可作为 AI 润色的模板起点。
+const GOAL_SAMPLE =
+  '为一款便携保温杯制作一条竖屏带货短视频：突出「6 小时保温、一键弹盖、大容量」卖点，' +
+  '面向通勤白领，画面简洁有质感，时长约 15 秒。'
 
 const RUN_STATUS_STYLE: Record<string, string> = {
   pending: 'bg-gray-500/20 text-gray-300',
@@ -64,6 +70,8 @@ export default function AgentStudio() {
   const [runFieldValues, setRunFieldValues] = useState<Record<string, any>>({})
   const [runConfirmMode, setRunConfirmMode] = useState<'' | 'auto' | 'checkpoint' | 'step'>('')
   const [starting, setStarting] = useState(false)
+  const [goalPolishing, setGoalPolishing] = useState(false)
+  const [dryGoalPolishing, setDryGoalPolishing] = useState(false)
 
   // dry-run
   const [dryAgentKey, setDryAgentKey] = useState('default')
@@ -130,6 +138,21 @@ export default function AgentStudio() {
   const runAgent = agents.find((a) => agentKeyOf(a) === runAgentKey)
   const runFields = runAgent?.input_schema || []
 
+  // AI 润色运行目标：为空时以样例模板为起点生成，有内容则润色。
+  const polishGoal = async () => {
+    const base = runGoal.trim() || GOAL_SAMPLE
+    setGoalPolishing(true)
+    setError('')
+    try {
+      const polished = await polishPrompt(base, 'goal')
+      if (polished) setRunGoal(polished)
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || e?.message || 'AI 润色失败，请稍后重试')
+    } finally {
+      setGoalPolishing(false)
+    }
+  }
+
   const startRun = async () => {
     if (!runGoal.trim()) { setError('目标（goal）不能为空'); return }
     // 按 input_schema 校验必填 + 组装 inputs
@@ -163,6 +186,19 @@ export default function AgentStudio() {
   }
 
   // ── dry-run ────────────────────────────────────────────────────────────────
+  const polishDryGoal = async () => {
+    const base = dryGoal.trim() || GOAL_SAMPLE
+    setDryGoalPolishing(true)
+    try {
+      const polished = await polishPrompt(base, 'goal')
+      if (polished) setDryGoal(polished)
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || e?.message || 'AI 润色失败，请稍后重试')
+    } finally {
+      setDryGoalPolishing(false)
+    }
+  }
+
   const doDryRun = async () => {
     if (!dryGoal.trim()) return
     setDryRunning(true)
@@ -281,9 +317,12 @@ export default function AgentStudio() {
                     <div className="mt-auto pt-2 flex items-center gap-1">
                       <span className="text-[10px] text-gray-600">v{s.version}</span>
                       <div className="ml-auto flex items-center gap-1">
-                        <button onClick={() => setEditingSkill(s)} disabled={!canEditSkill(s)} title="编辑"
-                          className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-30">
-                          <Pencil className="w-3.5 h-3.5 text-gray-400" />
+                        <button onClick={() => setEditingSkill(s)}
+                          title={canEditSkill(s) ? '编辑' : '查看 / 另存为副本'}
+                          className="p-1.5 rounded-lg hover:bg-white/10">
+                          {canEditSkill(s)
+                            ? <Pencil className="w-3.5 h-3.5 text-gray-400" />
+                            : <Copy className="w-3.5 h-3.5 text-gray-400" />}
                         </button>
                         <button onClick={() => handleDeleteSkill(s)} disabled={!canEditSkill(s)} title="删除"
                           className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-30">
@@ -312,9 +351,17 @@ export default function AgentStudio() {
                     </select>
                   </label>
                   <label className="block mb-2">
-                    <span className="block text-xs text-gray-400 mb-1">目标 Goal</span>
-                    <textarea className="input min-h-[70px] text-sm" value={runGoal}
-                      onChange={(e) => setRunGoal(e.target.value)} placeholder="想让智能体完成什么..." />
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-gray-400">目标 Goal</span>
+                      <button type="button" onClick={polishGoal} disabled={goalPolishing}
+                        title={runGoal.trim() ? '让 AI 润色当前目标' : '以样例为起点，让 AI 生成一个目标'}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 disabled:opacity-60">
+                        {goalPolishing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                        {goalPolishing ? '润色中...' : (runGoal.trim() ? 'AI 润色' : 'AI 生成样例')}
+                      </button>
+                    </div>
+                    <textarea className="input min-h-[110px] text-xs leading-relaxed" value={runGoal}
+                      onChange={(e) => setRunGoal(e.target.value)} placeholder={GOAL_SAMPLE} />
                   </label>
                   {runFields.length > 0 && (
                     <div className="mb-2">
@@ -418,9 +465,17 @@ export default function AgentStudio() {
               </select>
             </label>
             <label className="block mb-3">
-              <span className="block text-xs text-gray-400 mb-1">目标 Goal</span>
-              <textarea className="input min-h-[70px] text-sm" value={dryGoal}
-                onChange={(e) => setDryGoal(e.target.value)} placeholder="想让智能体完成什么..." />
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400">目标 Goal</span>
+                <button type="button" onClick={polishDryGoal} disabled={dryGoalPolishing}
+                  title={dryGoal.trim() ? '让 AI 润色当前目标' : '以样例为起点，让 AI 生成一个目标'}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 disabled:opacity-60">
+                  {dryGoalPolishing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                  {dryGoalPolishing ? '润色中...' : (dryGoal.trim() ? 'AI 润色' : 'AI 生成样例')}
+                </button>
+              </div>
+              <textarea className="input min-h-[110px] text-xs leading-relaxed" value={dryGoal}
+                onChange={(e) => setDryGoal(e.target.value)} placeholder={GOAL_SAMPLE} />
             </label>
             <button onClick={doDryRun} disabled={dryRunning || !dryGoal.trim()}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/80 text-white hover:bg-blue-500 disabled:opacity-60 mb-4">
