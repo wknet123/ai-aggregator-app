@@ -633,6 +633,8 @@ class PreviewImage(BaseModel):
     frame: str = ""                                  # 'first' | 'last' | ''
     usage: str = ""                                  # 用途/视角（全局图片代入「全程使用图片N…」）
     desc: str = ""                                   # 形态/特征描述（配置元素 description）
+    name: str = ""                                   # 角色/素材名（角色图确保提示词带角色名）
+    assetType: str = ""                              # character/scene/prop
 
 class PreviewPayloadRequest(BaseModel):
     global_desc: str = ""
@@ -667,7 +669,7 @@ async def preview_payload(
     prompt = (req.final_prompt or "").strip() or build_beat_prompt(
         req.beats,
         global_desc=req.global_desc,
-        images=[{"label": im.label, "frame": im.frame, "usage": im.usage, "desc": im.desc} for im in req.images],
+        images=[{"label": im.label, "frame": im.frame, "usage": im.usage, "desc": im.desc, "name": im.name, "assetType": im.assetType} for im in req.images],
         has_video=bool(req.reference_video_key),
         has_audio=bool(req.audio_key),
         video_label=req.reference_video_label,
@@ -987,6 +989,8 @@ class ComposeShotPromptImage(BaseModel):
     frame: str = ""                                  # 'first' | 'last' | ''
     usage: str = ""                                  # 用途/视角（全局图片代入「全程使用图片N…」）
     desc: str = ""                                   # 形态/特征描述（配置元素 description）
+    name: str = ""                                   # 角色/素材名（角色图确保提示词带角色名）
+    assetType: str = ""                              # character/scene/prop
 
 class ComposeShotPromptRequest(BaseModel):
     global_desc: str = ""
@@ -1006,8 +1010,10 @@ COMPOSE_PROMPT_SYSTEM = """你是专业的短视频/广告分镜导演。下面�
 请把这些事实重构为一段**连贯、有电影感、可直接驱动 Seedance 2.0 视频模型**的中文最终提示词。参考「果茶第一人称广告 / 阳光饮料」范式：开篇点明整体风格与人称视角，逐个时间段顺滑衔接运镜与主体动作，结尾收束到尾帧。
 
 硬性要求：
-- 严格保留「图片N」「参考视频」「参考音频」的序号与代入名称语义，不得改写或丢弃（视频生成 API 靠它区分素材）。
-- 「全片保持图片N「名称」的形象特征：…」这类形态/特征描述必须**完整保留**并自然融入正文，确保生成画面里该角色/场景/道具的外观特征始终一致，不得删改。
+- 参考图代入范式（极重要）：正文里提及参考图时，**用每幅图的视角描述（图片清单里「图片N为「…」」中的名称）替代「图片N」这样的简易序号**，
+  形如「使用图像1(林晚的特征图片)、图像2(林晚的肖像特写)和图像3(林晚的三个角度视图)作为角色的参考。[角色行动] 在公园里行走，[相机运动] 缓慢推进，还有电影般的灯光。」
+  —— 括号里放该图的视角描述，重点突出每张图对应的特征，同时保留其原始「图片N」序号语义（视频生成 API 靠序号区分素材，不得丢弃或错配）。
+- 「全片保持图片N…中角色的形象特征：…」这类角色特征描述必须**完整保留并自然融入正文**，且**全篇只出现一次**（成片剧本只含一项角色特征描述，禁止逐镜或多处重复同一角色的特征）。
 - 保留每段的「起-止s」时间标记与先后顺序，从 0 覆盖到总时长。
 - 景别标为「近景/远景/特写」的时间段，要在该段文字中自然体现该景别；标为「标准」或未标的段落，按常规叙述、不要刻意强调景别。
 - 首帧/尾帧标注的图片，要在提示词中体现其作为画面首帧/尾帧的定格作用。
@@ -1031,7 +1037,7 @@ async def compose_shot_prompt(
     baseline = build_beat_prompt(
         req.beats,
         global_desc=req.global_desc,
-        images=[{"label": im.label, "frame": im.frame, "usage": im.usage, "desc": im.desc} for im in req.images],
+        images=[{"label": im.label, "frame": im.frame, "usage": im.usage, "desc": im.desc, "name": im.name, "assetType": im.assetType} for im in req.images],
         has_video=bool(req.video_label),
         has_audio=bool(req.audio_label),
         video_label=req.video_label,

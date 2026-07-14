@@ -18,6 +18,7 @@ import {
 import { fluxService } from '../../services/flux.service'
 import { googleService } from '../../services/google.service'
 import { polishPrompt } from '../../services/prompt.service'
+import { viewCaption } from '../../utils/drama-compose'
 import AICharacterLibraryModal from './AICharacterLibraryModal'
 
 const TYPE_TABS: { key: AssetType; label: string; icon: typeof Users }[] = [
@@ -165,9 +166,9 @@ export default function AssetConfigPanel({
                       onClick={() => setSelectedId(a.asset_id)}
                       className={`group relative rounded-xl overflow-hidden border cursor-pointer transition-colors ${
                         active ? 'border-indigo-400/70 bg-indigo-500/10' : 'border-white/8 hover:border-white/20 bg-white/[0.02]'}`}>
-                      <div className="aspect-[4/3] bg-black/30 overflow-hidden">
+                      <div className="aspect-[3/4] bg-black/30 overflow-hidden">
                         {cover
-                          ? <img src={imgSrc(a, cover)} alt={a.name} className="w-full h-full object-cover" />
+                          ? <img src={imgSrc(a, cover)} alt={a.name} className="w-full h-full object-contain" />
                           : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-5 h-5 text-gray-700" /></div>}
                       </div>
                       <div className="p-2">
@@ -229,6 +230,9 @@ function AssetDetail({
   const [showT2I, setShowT2I] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  // 当前选中图的视角描述（caption）就地编辑
+  const [editCaption, setEditCaption] = useState('')
+  const [savingCaption, setSavingCaption] = useState(false)
   // 名称 / 描述 就地编辑 + 一键润色
   const [editName, setEditName] = useState(asset.name)
   const [editDesc, setEditDesc] = useState(asset.description || '')
@@ -284,6 +288,28 @@ function AssetDetail({
   }, [asset])
 
   const activeImg = asset.images.find(i => i.id === activeImgId) || asset.images[0] || null
+
+  // 选中图变化时同步 caption 编辑框
+  useEffect(() => {
+    setEditCaption(activeImg?.caption || '')
+  }, [activeImg?.id, activeImg?.caption])
+
+  // 当前选中图在列表中的序号（用于「套用视角名称」按钮回填）
+  const activeImgIndex = activeImg ? asset.images.findIndex(i => i.id === activeImg.id) : -1
+
+  const handleSaveCaption = async (value: string) => {
+    if (!activeImg || savingCaption) return
+    if ((value || '') === (activeImg.caption || '')) return
+    setSavingCaption(true); setError('')
+    try {
+      const updated = await projectAssetService.updateImageCaption(asset.asset_id, activeImg.id, value)
+      onChange(updated)
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || '视角描述保存失败')
+    } finally {
+      setSavingCaption(false)
+    }
+  }
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -349,6 +375,31 @@ function AssetDetail({
 
       {error && <p className="mx-5 mt-2 text-[11px] text-red-400 bg-red-500/10 rounded-lg px-3 py-1.5">{error}</p>}
 
+      {/* 当前选中图的视角描述定义（caption）：命名该图视角，选图/成片提示词代入 */}
+      {activeImg && (
+        <div className="flex-shrink-0 px-5 pt-3">
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[11px] text-gray-400">当前图片的视角描述（如「{asset.name || '角色'}的肖像特写」，选图与成片提示词代入）</label>
+            {asset.asset_type === 'character' && activeImgIndex >= 0 && activeImgIndex < 4 && (
+              <button
+                onClick={() => { const c = viewCaption(asset.name, activeImgIndex); setEditCaption(c); handleSaveCaption(c) }}
+                disabled={locked || savingCaption}
+                className="text-[10px] text-indigo-300 hover:text-indigo-200 disabled:opacity-40">
+                套用视角名称
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input value={editCaption} disabled={locked || savingCaption}
+              onChange={e => setEditCaption(e.target.value)}
+              onBlur={() => handleSaveCaption(editCaption.trim())}
+              placeholder="为该图命名视角（如：肖像特写 / 三个角度视图）"
+              className="flex-1 bg-[#06060e] border border-white/10 rounded-lg px-3 py-1.5 text-[11px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500/40 disabled:opacity-50" />
+            {savingCaption && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-500" />}
+          </div>
+        </div>
+      )}
+
       {/* 缩略图检索 + 操作条 */}
       <div className="flex-shrink-0 border-t border-white/5 p-4 space-y-3">
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -357,12 +408,18 @@ function AssetDetail({
             return (
               <div key={img.id}
                 onClick={() => setActiveImgId(img.id)}
+                title={img.caption || undefined}
                 className={`group relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border cursor-pointer ${
                   active ? 'border-indigo-400' : 'border-white/10 hover:border-white/25'}`}>
                 <img src={imgSrc(asset, img)} alt="" className="w-full h-full object-cover" />
                 {img.is_cover === 1 && (
                   <div className="absolute top-0.5 left-0.5 w-4 h-4 flex items-center justify-center rounded bg-black/60" title="主图">
                     <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
+                  </div>
+                )}
+                {img.caption && (
+                  <div className="absolute bottom-0 inset-x-0 px-1 py-0.5 bg-gradient-to-t from-black/80 to-transparent">
+                    <span className="block text-[8px] text-gray-200 truncate leading-tight">{img.caption}</span>
                   </div>
                 )}
                 {asset.images.length > 1 && (

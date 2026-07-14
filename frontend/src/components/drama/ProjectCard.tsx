@@ -29,6 +29,7 @@ export default function ProjectCard({
         onClick={() => onOpen(project)}
       >
         {(() => {
+          // 封面 = 分镜拆分选定的图片，默认第一幅（preview_images 已按 effectiveShotImages 同序返回）
           const imgs = project.preview_images?.length
             ? project.preview_images
             : project.thumbnail_path
@@ -41,27 +42,12 @@ export default function ProjectCard({
               </div>
             )
           }
-          if (imgs.length === 1) {
-            return (
-              <img
-                src={fluxService.getResultUrl(imgs[0])}
-                alt={project.name}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              />
-            )
-          }
-          const grid = imgs.slice(0, 4)
           return (
-            <div className={`absolute inset-0 grid gap-0.5 ${grid.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 grid-rows-2'}`}>
-              {grid.map((url, i) => (
-                <img
-                  key={i}
-                  src={fluxService.getResultUrl(url)}
-                  alt=""
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-              ))}
-            </div>
+            <img
+              src={fluxService.getResultUrl(imgs[0])}
+              alt={project.name}
+              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+            />
           )
         })()}
         <div className="absolute top-2 left-2">

@@ -15,7 +15,7 @@ import {
   ListVideo, Trash2, Download, RotateCcw, Scissors, AlertCircle,
   Sparkles, Clock, ChevronRight, ChevronDown, Lock, FileJson, X,
   Music, ImageIcon, Video, Users, Library, MapPin, Package, Layers,
-  Pencil,
+  Pencil, Maximize2,
 } from 'lucide-react'
 import Header from '../components/layout/Header'
 import Sidebar from '../components/layout/Sidebar'
@@ -29,6 +29,8 @@ import ProjectList from '../components/drama/ProjectList'
 import ShotStoryboardEditor from '../components/drama/ShotStoryboardEditor'
 import AssetConfigPanel from '../components/drama/AssetConfigPanel'
 import AssetPickerModal from '../components/drama/AssetPickerModal'
+import AssetThumb from '../components/drama/AssetThumb'
+import AssetPreviewModal from '../components/drama/AssetPreviewModal'
 
 // 配置来源徽标（整集素材库图片来自配置时展示）
 const GLOBAL_ASSET_SRC: Record<'character' | 'scene' | 'prop', { label: string; icon: typeof Users }> = {
@@ -144,7 +146,7 @@ function buildShotBaseline(ep: DramaEpisode, shot: EpisodeShot): string {
   return buildPrompt({
     global: [ep.global_desc, shot.global_desc].map(x => (x || '').trim()).filter(Boolean).join('\n'),
     beats: (shot.beats ?? []) as Beat[],
-    images: images.map(im => ({ kind: im.kind, label: im.label, frame: im.frame, usage: im.usage, desc: im.desc })),
+    images: images.map(im => ({ kind: im.kind, label: im.label, frame: im.frame, usage: im.usage, desc: im.desc, name: im.name, assetType: im.assetType })),
     video: hasVideo ? { label: shot.reference_video_label } : null,
     audio: hasAnyAudio ? { label: audioLabel } : null,
     composition: ep.composition,
@@ -521,7 +523,7 @@ export default function OmniWeaverPage() {
         narration: currentEp.narration,
         beats: s.beats.map(b => ({ time: b.time, action: b.action, sfx: b.sfx, voice: b.voice, imageRef: b.imageRef, shotSize: b.shotSize })),
         // 有效图片 = 整集全局应用图片（图片1..G） + 本镜自有图片；序号即 API content 顺序
-        images: effectiveShotImages(currentEp, s).map(im => ({ key: im.key, name: im.name, kind: im.kind, label: im.label, frame: im.frame, usage: im.usage, desc: im.desc })),
+        images: effectiveShotImages(currentEp, s).map(im => ({ key: im.key, name: im.name, kind: im.kind, label: im.label, frame: im.frame, usage: im.usage, desc: im.desc, assetType: im.assetType })),
         reference_video_key: s.reference_video_key,
         reference_video_label: s.reference_video_label,
         // 音频/BGM：本镜自有音频优先，否则用整集 BGM 关联的音频文件（按名称代入提示词）
@@ -1230,6 +1232,7 @@ function EpisodeGlobalOptions({ ep, dramaProjectId, disabled, onPatchEp }: {
   const [uploading, setUploading] = useState<'image' | 'video' | 'audio' | null>(null)
   const [err, setErr] = useState('')
   const [showPicker, setShowPicker] = useState(false)
+  const [previewAssetId, setPreviewAssetId] = useState<string | null>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
   const uploadType = useRef<'image' | 'video' | 'audio'>('image')
 
@@ -1366,6 +1369,16 @@ function EpisodeGlobalOptions({ ep, dramaProjectId, disabled, onPatchEp }: {
                 : 0
               return a.type === 'image' ? (
                 <div key={a.id} className="rounded-md bg-[#14141c] border border-white/8 px-2 py-1.5 flex flex-col gap-1.5">
+                  {a.key
+                    ? <button type="button" onClick={() => setPreviewAssetId(a.id)}
+                        title="点击查看原图 / 编辑标题描述"
+                        className="relative group/thumb w-full h-28 rounded-md overflow-hidden border border-white/10 bg-black/30">
+                        <AssetThumb objectKey={a.key} className="w-full h-full object-contain" />
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover/thumb:bg-black/40 transition-colors opacity-0 group-hover/thumb:opacity-100">
+                          <Maximize2 className="w-4 h-4 text-white/90" />
+                        </span>
+                      </button>
+                    : <div className="w-full h-28 rounded-md bg-black/30 flex items-center justify-center"><ImageIcon className="w-6 h-6 text-gray-600" /></div>}
                   <div className="flex items-center gap-1.5">
                     {assetIcon(a.type)}
                     {globalNo > 0 && <span className="px-1 py-0.5 rounded bg-indigo-500/15 text-indigo-300 text-[9px] flex-shrink-0">图片{globalNo}</span>}
@@ -1428,6 +1441,16 @@ function EpisodeGlobalOptions({ ep, dramaProjectId, disabled, onPatchEp }: {
         <AssetPickerModal projectId={dramaProjectId}
           onClose={() => setShowPicker(false)} onPick={onPickFromConfig} />
       )}
+      {previewAssetId && (() => {
+        const a = assets.find(x => x.id === previewAssetId)
+        if (!a || !a.key) return null
+        return (
+          <AssetPreviewModal kind="image" objectKey={a.key} name={a.name}
+            label={a.label} desc={a.desc} editable
+            onSave={(patch) => updateAsset(a.id, patch)}
+            onClose={() => setPreviewAssetId(null)} />
+        )
+      })()}
     </div>
   )
 }
@@ -1564,7 +1587,7 @@ function ShotPromptCard({ shot, aspect, ep }: { shot: EpisodeShot; aspect: strin
         const res = await dramaService.previewPayload({
           global_desc: [episodeGlobal, shot.global_desc].map(x => (x || '').trim()).filter(Boolean).join('\n'),
           beats: (shot.beats ?? []).map(b => ({ time: b.time, action: b.action, shotSize: b.shotSize })),
-          images: images.map(im => ({ key: im.key, label: im.label, frame: im.frame, usage: im.usage, desc: im.desc })),
+          images: images.map(im => ({ key: im.key, label: im.label, frame: im.frame, usage: im.usage, desc: im.desc, name: im.name, assetType: im.assetType })),
           reference_video_key: shot.reference_video_key,
           reference_video_label: shot.reference_video_label,
           audio_key: shot.audio_key || ep.bgm?.key,

@@ -12,6 +12,7 @@ export interface ProjectAssetImageRecord {
   image_path: string
   is_cover: number
   sort_order: number
+  caption?: string | null   // 每图视角描述定义（角色名+视角，如「林晚的肖像特写」）
 }
 
 export interface ProjectAssetRecord {
@@ -115,6 +116,18 @@ export const projectAssetService = {
   async deleteImage(assetId: string, imageId: number): Promise<ProjectAssetRecord> {
     const resp = await apiClient.delete<{ data: ProjectAssetRecord }>(
       `/api/v1/project-assets/${assetId}/images/${imageId}`,
+    )
+    return resp.data.data
+  },
+
+  /** 更新单张图片的视角描述定义（caption）。 */
+  async updateImageCaption(assetId: string, imageId: number, caption: string): Promise<ProjectAssetRecord> {
+    const fd = new FormData()
+    fd.append('caption', caption)
+    const resp = await apiClient.put<{ data: ProjectAssetRecord }>(
+      `/api/v1/project-assets/${assetId}/images/${imageId}`,
+      fd,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
     )
     return resp.data.data
   },

@@ -41,6 +41,10 @@ _COLUMN_MIGRATIONS = {
         # AI 角色库「应用到画布」实例化的要素记录其来源 character_key（溯源用途）。
         "source_ai_character_key": "VARCHAR(36) NULL",
     },
+    "project_asset_images": {
+        # 每图视角描述定义（角色名+视角，如「林晚的肖像特写」），选图/成片提示词代入。
+        "caption": "VARCHAR(500) NULL",
+    },
     "agent_steps": {
         # Loop Harness 幂等键：LLM tool_call id，防续跑重复扣费/重复执行。
         "tool_call_id": "VARCHAR(64) NULL",

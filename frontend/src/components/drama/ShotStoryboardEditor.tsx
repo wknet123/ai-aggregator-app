@@ -17,6 +17,8 @@ import {
 import { dramaService, EpisodeShot, EpisodeShotImage } from '../../services/drama.service'
 import { type Beat, defaultBeats, type ShotSize } from '../../utils/drama-compose'
 import AssetPickerModal from './AssetPickerModal'
+import AssetThumb from './AssetThumb'
+import AssetPreviewModal from './AssetPreviewModal'
 
 // 配置来源徽标：角色/场景/道具 → 图标 + 文案
 const ASSET_SRC: Record<'character' | 'scene' | 'prop', { label: string; icon: typeof Users }> = {
@@ -45,7 +47,7 @@ export default function ShotStoryboardEditor({
   const [polishingBeat, setPolishingBeat] = useState<number | null>(null)
   const [showPicker, setShowPicker] = useState(false)
   // 点击预览：记录待预览素材（图片/视频/音频），弹出灯箱按需拉取签名 URL
-  const [preview, setPreview] = useState<{ kind: 'image' | 'video' | 'audio'; key: string; name?: string } | null>(null)
+  const [preview, setPreview] = useState<{ kind: 'image' | 'video' | 'audio'; key: string; name?: string; label?: string; desc?: string; imageIndex?: number } | null>(null)
   // 删除时间段二次确认：记录待确认的 beat 索引（防误删）
   const [confirmBeatIdx, setConfirmBeatIdx] = useState<number | null>(null)
 
@@ -110,13 +112,13 @@ export default function ShotStoryboardEditor({
     onUpdate({ images: next })
   }
 
-  // ── 从配置选取：把一个角色/场景/道具的选中图追加为本镜参考图（携带名称+描述+来源）──
-  const onPickFromConfig = (sel: { key: string; label: string; desc: string; name: string; assetId: string; assetType: 'character' | 'scene' | 'prop' }) => {
+  // ── 从配置选取：把一个角色/场景/道具的选中图追加为本镜参考图（携带视角名称+描述+来源）──
+  const onPickFromConfig = (sel: { key: string; label: string; caption?: string; desc: string; name: string; assetId: string; assetType: 'character' | 'scene' | 'prop' }) => {
     setShowPicker(false)
     onUpdate({
       images: [...images, {
         key: sel.key, name: sel.name, kind: 'frame',
-        label: sel.label, desc: sel.desc,
+        label: sel.caption || sel.label, desc: sel.desc,
         assetId: sel.assetId, assetType: sel.assetType,
       }],
     })
@@ -211,14 +213,26 @@ export default function ShotStoryboardEditor({
                 <p className="text-[10px] text-indigo-300 flex items-center gap-1">
                   <ImageIcon className="w-3 h-3" />已自动引用整集全局图片（来自整集素材库，在「整集全局设定」里管理）
                 </p>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                   {globalImages.map((g, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 rounded-md bg-[#14141c] border border-indigo-500/20 px-1.5 py-1 text-[10px] text-gray-300">
-                      <span className="px-1 py-0.5 rounded bg-indigo-500/15 text-indigo-300 text-[9px]">图片{i + 1}</span>
-                      <span className="truncate max-w-[8rem]">{g.label || g.name || '未命名'}</span>
-                      {g.frame && <span className="text-indigo-300/80">{g.frame === 'first' ? '首帧' : '尾帧'}</span>}
-                      {g.usage && <span className="text-gray-500">· {g.usage}</span>}
-                    </span>
+                    <div key={i} className="rounded-lg bg-[#14141c] border border-indigo-500/20 p-1.5 flex flex-col gap-1">
+                      {g.key
+                        ? <button type="button" onClick={() => setPreview({ kind: 'image', key: g.key!, name: g.label || g.name })}
+                            title="点击预览大图"
+                            className="relative group/thumb w-full h-20 rounded-md overflow-hidden border border-white/10 bg-black/30">
+                            <AssetThumb objectKey={g.key} className="w-full h-full object-contain" />
+                            <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover/thumb:bg-black/40 transition-colors opacity-0 group-hover/thumb:opacity-100">
+                              <Maximize2 className="w-4 h-4 text-white/90" />
+                            </span>
+                          </button>
+                        : <span className="w-full h-20 rounded-md bg-black/30 flex items-center justify-center"><ImageIcon className="w-5 h-5 text-gray-600" /></span>}
+                      <div className="flex items-center gap-1 flex-wrap text-[10px] text-gray-300">
+                        <span className="px-1 py-0.5 rounded bg-indigo-500/15 text-indigo-300 text-[9px]">图片{i + 1}</span>
+                        <span className="truncate max-w-full">{g.label || g.name || '未命名'}</span>
+                        {g.frame && <span className="text-indigo-300/80">{g.frame === 'first' ? '首帧' : '尾帧'}</span>}
+                        {g.usage && <span className="text-gray-500">· {g.usage}</span>}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -251,7 +265,7 @@ export default function ShotStoryboardEditor({
                     </div>
                     <input value={img.label || ''} disabled={dis}
                       onChange={e => updateImage(i, { label: e.target.value })}
-                      placeholder={`图片${i + 1 + gOffset}名称（如：红苹果）`}
+                      placeholder={`图片${i + 1 + gOffset}名称/视角（如：林晚的肖像特写）`}
                       className="w-full bg-[#06060e] border border-amber-500/15 rounded-md px-2 py-1 text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-amber-400/40 disabled:opacity-50" />
                     <button onClick={() => pickUpload('image', i)} disabled={dis || uploadingSlot === `image-${i}`}
                       className="flex items-center justify-center gap-1 rounded-md border border-dashed border-amber-500/30 px-2 py-2 text-[10px] text-amber-300/80 hover:text-amber-200 hover:border-amber-400/50 disabled:opacity-40">
@@ -283,14 +297,14 @@ export default function ShotStoryboardEditor({
                     </div>
                     <input value={img.label || ''} disabled={dis}
                       onChange={e => updateImage(i, { label: e.target.value })}
-                      placeholder={`图片${i + 1 + gOffset}名称（如：红苹果）`}
+                      placeholder={`图片${i + 1 + gOffset}名称/视角（如：林晚的肖像特写）`}
                       className="w-full bg-[#06060e] border border-indigo-500/15 rounded-md px-2 py-1 text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500/40 disabled:opacity-50" />
-                    {/* 缩略图：点击放大预览实际效果 */}
+                    {/* 缩略图：点击查看原图 + 编辑标题/描述 */}
                     {img.key && (
-                      <button type="button" onClick={() => setPreview({ kind: 'image', key: img.key!, name: img.label || img.name })}
-                        title="点击预览大图"
-                        className="relative group/thumb w-full aspect-video rounded-md overflow-hidden border border-white/8 bg-black/30">
-                        <AssetThumb objectKey={img.key} />
+                      <button type="button" onClick={() => setPreview({ kind: 'image', key: img.key!, name: img.name, label: img.label, desc: img.desc, imageIndex: i })}
+                        title="点击查看原图 / 编辑标题描述"
+                        className="relative group/thumb w-full h-28 rounded-md overflow-hidden border border-white/8 bg-black/30">
+                        <AssetThumb objectKey={img.key} className="w-full h-full object-contain" />
                         <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover/thumb:bg-black/40 transition-colors opacity-0 group-hover/thumb:opacity-100">
                           <Maximize2 className="w-4 h-4 text-white/90" />
                         </span>
@@ -426,6 +440,9 @@ export default function ShotStoryboardEditor({
       )}
       {preview && (
         <AssetPreviewModal kind={preview.kind} objectKey={preview.key} name={preview.name}
+          label={preview.label} desc={preview.desc}
+          editable={preview.imageIndex != null}
+          onSave={preview.imageIndex != null ? (patch) => updateImage(preview.imageIndex!, patch) : undefined}
           onClose={() => setPreview(null)} />
       )}
     </div>
@@ -463,48 +480,6 @@ function SlotChip({ icon, label, name, uploading, disabled, labelValue, labelPla
   )
 }
 
-/** 素材缩略图：懒加载签名 URL，展示为 object-cover 缩略图。 */
-function AssetThumb({ objectKey }: { objectKey: string }) {
-  const [url, setUrl] = useState('')
-  const [failed, setFailed] = useState(false)
-  useEffect(() => {
-    let alive = true
-    dramaService.assetPreviewUrl(objectKey).then(u => { if (alive) setUrl(u) }).catch(() => { if (alive) setFailed(true) })
-    return () => { alive = false }
-  }, [objectKey])
-  if (failed) return <div className="w-full h-full flex items-center justify-center text-gray-700"><ImageIcon className="w-5 h-5" /></div>
-  if (!url) return <div className="w-full h-full flex items-center justify-center"><Loader2 className="w-4 h-4 animate-spin text-gray-600" /></div>
-  return <img src={url} alt="" className="w-full h-full object-cover" onError={() => setFailed(true)} />
-}
+/** 素材缩略图：懒加载签名 URL 展示（默认 object-contain 完整显示，不裁切）。已抽取到 ./AssetThumb，此处复用。 */
+/** 素材预览灯箱（查看原图 + 可选标题/描述编辑）已抽取到 ./AssetPreviewModal，此处复用。 */
 
-/** 素材预览灯箱：图片/视频/音频全屏预览，点击遮罩或关闭按钮退出。 */
-function AssetPreviewModal({ kind, objectKey, name, onClose }: {
-  kind: 'image' | 'video' | 'audio'; objectKey: string; name?: string; onClose: () => void
-}) {
-  const [url, setUrl] = useState('')
-  const [error, setError] = useState('')
-  useEffect(() => {
-    let alive = true
-    dramaService.assetPreviewUrl(objectKey)
-      .then(u => { if (alive) setUrl(u) })
-      .catch(e => { if (alive) setError(e?.response?.data?.detail || e?.message || '预览地址获取失败') })
-    return () => { alive = false }
-  }, [objectKey])
-  return (
-    <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div onClick={e => e.stopPropagation()} className="relative max-w-3xl w-full max-h-[85vh] flex flex-col rounded-2xl border border-white/10 bg-[#0d0d15] overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/8">
-          <span className="text-xs text-gray-300 truncate">{name || '素材预览'}</span>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-200"><X className="w-4 h-4" /></button>
-        </div>
-        <div className="flex-1 min-h-0 flex items-center justify-center p-4 bg-black/30">
-          {error ? <p className="text-[11px] text-red-400">{error}</p>
-            : !url ? <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
-            : kind === 'image' ? <img src={url} alt={name || ''} className="max-w-full max-h-[70vh] object-contain rounded-lg" />
-            : kind === 'video' ? <video src={url} controls autoPlay className="max-w-full max-h-[70vh] rounded-lg bg-black" />
-            : <audio src={url} controls autoPlay className="w-full" />}
-        </div>
-      </div>
-    </div>
-  )
-}

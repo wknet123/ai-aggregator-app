@@ -50,5 +50,8 @@ class ProjectAssetImage(Base):
     image_path = Column(String(500), nullable=False)   # MinIO object key
     is_cover   = Column(Integer, default=0)             # 1 = 主图
     sort_order = Column(Integer, default=0)
+    # 每图视角描述定义（如「林晚的肖像特写」）：既标明角色名，又对应给出视角特征，
+    # 选图时作为该图的描述信息提供，合并成片提示词中替代「图片N」简易名称。
+    caption    = Column(String(500), nullable=True)
 
     asset = relationship("ProjectAsset", back_populates="images")

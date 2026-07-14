@@ -277,26 +277,50 @@ def _signed_ref_asset_path(object_key: str, ttl_seconds: int = 7 * 24 * 3600) ->
 def _extract_preview_images(episodes_json: str | None, limit: int = 4) -> list[str]:
     """Extract up to `limit` servable preview image URLs from serialized episodes_data.
 
-    Prefers each shot's first reference image (served via signed /ref-asset). Video
-    URLs are skipped — they can't render in an <img>. displayUrl is runtime-only and
-    stripped on save, so it is never present here.
+    封面取自「分镜拆分选定的图片」，默认第一幅：与前端 effectiveShotImages 同序——
+    每集先取该集全局应用图片（ep.assets 中 type==image 且 applyToAll!=False，即在整集
+    素材库选定并应用到所有分镜的角色/参考图），再取各分镜自有的首张参考图。这样即使
+    用户只在整集层选了角色图、未逐镜加图，封面也能正确显示选定图片。
+
+    Video URLs are skipped (can't render in <img>). displayUrl is runtime-only and
+    stripped on save, so it is normally absent here (kept only as a legacy fallback).
     """
     if not episodes_json:
         return []
     try:
         data = json.loads(episodes_json)
         images: list[str] = []
+        seen: set[str] = set()
+
+        def _add(item: dict) -> bool:
+            """Append one image's servable URL; return True once limit reached."""
+            key = item.get("key")
+            url = _signed_ref_asset_path(key) or item.get("displayUrl")
+            if not url:
+                return False
+            dedup = key or url
+            if dedup in seen:
+                return False
+            seen.add(dedup)
+            images.append(url)
+            return len(images) >= limit
+
         for ep in data.get("episodes", []):
+            # 1) 整集全局应用图片（图片1..G），与分镜里代入顺序一致
+            for asset in (ep.get("assets") or []):
+                if asset.get("type") == "image" and asset.get("applyToAll") is not False and asset.get("key"):
+                    if _add(asset):
+                        return images
+            # 2) 各分镜自有的首张参考图
             for shot in ep.get("shots", []):
                 first = (shot.get("images") or [{}])[0]
-                url = _signed_ref_asset_path(first.get("key")) or first.get("displayUrl")
-                if url:
-                    images.append(url)
-                    if len(images) >= limit:
+                if first.get("key") or first.get("displayUrl"):
+                    if _add(first):
                         return images
         return images
     except Exception:
         return []
+
 
 
 def _to_dict(project: DramaProject, include_data: bool = False) -> dict:

@@ -31,6 +31,7 @@ from app.models.drama_project import DramaProject
 from app.models.user import User
 from app.schemas.response import ResponseBase
 from app.services.storage import get_storage_service, StorageService
+from app.utils.ai_character_parser import view_caption, ai_character_slot_caption, build_description
 
 router = APIRouter()
 
@@ -57,6 +58,7 @@ def _asset_to_dict(a: ProjectAsset) -> dict:
                 "image_path": img.image_path,
                 "is_cover": img.is_cover,
                 "sort_order": img.sort_order,
+                "caption": getattr(img, "caption", None),
             }
             for img in (a.images or [])
         ],
@@ -165,8 +167,11 @@ async def create_asset(
         object_key = await _upload_asset_image(
             storage, data, img.filename, current_user.id, project_id, asset_uuid, idx,
         )
+        # 角色图按上传顺序自动套用视角名称（前 4 张：特征图片/肖像特写/各类表情/三个角度视图）。
+        caption = view_caption(name, idx) if asset_type == "character" else ""
         image_records.append(ProjectAssetImage(
             image_path=object_key, is_cover=1 if idx == 0 else 0, sort_order=idx,
+            caption=caption or None,
         ))
         if idx == 0:
             cover_key = object_key
@@ -217,7 +222,6 @@ async def create_asset_from_ai_character(
     - 记录 source_ai_character_key 溯源；实例自动获得「被分镜引用时禁删」保护
     """
     from app.models.ai_character import AICharacter
-    from app.utils.ai_character_parser import build_description
 
     ai_char = (await db.execute(
         select(AICharacter).where(AICharacter.character_key == ai_character_key)
@@ -237,6 +241,15 @@ async def create_asset_from_ai_character(
 
     asset_uuid = str(uuid.uuid4())
     storage = get_storage_service()
+    asset_name = (name or ai_char.name)
+
+    # 先算出角色描述（属性摘要 + 辨识特征 + 着装，多行），供下面按行生成每图默认视角描述用。
+    import json as _json
+    try:
+        attrs = _json.loads(ai_char.attributes_json) if ai_char.attributes_json else {}
+    except (ValueError, TypeError):
+        attrs = {}
+    description = build_description(attrs, ai_char.feature_desc or "", ai_char.costume_desc or "")
 
     image_records: list[ProjectAssetImage] = []
     cover_key: Optional[str] = None
@@ -248,19 +261,15 @@ async def create_asset_from_ai_character(
         object_key = await _upload_asset_image(
             storage, data, src.image_path, current_user.id, project_id, asset_uuid, idx,
         )
+        # 每图默认描述按源 AI 角色图的 slot（1..4）从角色描述逐行对应（表情固定）；
+        # 按 slot 而非拷贝顺序，保证只选部分 slot 时不错位。
+        caption = ai_character_slot_caption(asset_name, (src.slot or 1), description)
         image_records.append(ProjectAssetImage(
             image_path=object_key, is_cover=1 if idx == 0 else 0, sort_order=idx,
+            caption=caption or None,
         ))
         if idx == 0:
             cover_key = object_key
-
-    # description 预填：属性摘要 + 辨识特征 + 着装
-    import json as _json
-    try:
-        attrs = _json.loads(ai_char.attributes_json) if ai_char.attributes_json else {}
-    except (ValueError, TypeError):
-        attrs = {}
-    description = build_description(attrs, ai_char.feature_desc or "", ai_char.costume_desc or "")
 
     max_order = (await db.execute(
         select(func.coalesce(func.max(ProjectAsset.sort_order), -1)).where(
@@ -277,7 +286,7 @@ async def create_asset_from_ai_character(
         user_id=current_user.id,
         tenant_id=current_user.tenant_id,
         asset_type="character",
-        name=(name or ai_char.name),
+        name=asset_name,
         description=description,
         cover_path=cover_key,
         sort_order=int(max_order) + 1,
@@ -383,6 +392,7 @@ async def add_asset_images(
     asset = await _get_owned_asset(db, asset_id, current_user)
     storage = get_storage_service()
 
+    existing_count = len(asset.images)
     next_order = (max((img.sort_order for img in asset.images), default=-1)) + 1
     new_keys: list[str] = []
 
@@ -421,8 +431,13 @@ async def add_asset_images(
     if not new_keys:
         raise HTTPException(status_code=400, detail="未提供图片")
 
-    for key in new_keys:
-        db.add(ProjectAssetImage(asset_id=asset.id, image_path=key, is_cover=0, sort_order=next_order))
+    for i, key in enumerate(new_keys):
+        # 角色图续算视角名称：以已有图片数为起始序号（前 4 张：特征图片/肖像特写/各类表情/三个角度视图）。
+        caption = view_caption(asset.name, existing_count + i) if asset.asset_type == "character" else ""
+        db.add(ProjectAssetImage(
+            asset_id=asset.id, image_path=key, is_cover=0, sort_order=next_order,
+            caption=caption or None,
+        ))
         next_order += 1
 
     await db.commit()
@@ -465,6 +480,25 @@ async def delete_asset_image(
     await db.commit()
     await db.refresh(asset)
     return ResponseBase(success=True, message="已删除", data=_asset_to_dict(asset))
+
+
+@router.put("/{asset_id}/images/{image_id}", response_model=ResponseBase)
+async def update_asset_image(
+    asset_id: str,
+    image_id: int,
+    caption: str = Form(""),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """更新单张图片的视角描述定义（caption）。用于「配置」面板手动改写每图的视角命名。"""
+    asset = await _get_owned_asset(db, asset_id, current_user)
+    target = next((img for img in asset.images if img.id == image_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="图片不存在")
+    target.caption = (caption or "").strip() or None
+    await db.commit()
+    await db.refresh(asset)
+    return ResponseBase(success=True, message="已更新", data=_asset_to_dict(asset))
 
 
 @router.get("/{asset_id}/images/{image_id}/file")

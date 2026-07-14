@@ -21,9 +21,9 @@ import {
 
 // 卡片副标题使用的属性维度顺序（对标 main.png 卡片下方「男 · 中年 · 壮硕 · 威严」）
 const CARD_ATTRS = ['性别', '年龄段', '体格', '气质']
-// slot → detail.png 图片语义标签
+// slot → detail.png 图片语义标签（与后端 ai_character_parser.VIEW_NAMES 及 caption 生成保持同款）
 const SLOT_LABEL: Record<number, string> = {
-  1: '角色立绘', 2: '肖像特写', 3: '表情九宫格', 4: '三视图',
+  1: '特征图片', 2: '肖像特写', 3: '各种表情', 4: '三个角度视图',
 }
 
 export default function AICharacterLibraryModal({
@@ -293,7 +293,7 @@ function CharacterCard({ card, onClick }: { card: AICharacterCard; onClick: () =
         {card.cover_image_id != null
           ? <img src={aiCharacterService.imageUrl(card.character_key, card.cover_image_id)}
               alt={card.name} loading="lazy"
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+              className="w-full h-full object-contain group-hover:scale-105 transition-transform" />
           : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-6 h-6 text-gray-700" /></div>}
       </div>
       <div className="p-2.5">
@@ -387,10 +387,10 @@ function CharacterDetailModal({
                 {quadrants.map(slot => {
                   const img = bySlot(slot)
                   return (
-                    <div key={slot} className="relative rounded-xl overflow-hidden border border-white/10 bg-black/30 aspect-square">
+                    <div key={slot} className="relative rounded-xl overflow-hidden border border-white/10 bg-black/30 aspect-[3/4]">
                       {img
                         ? <img src={aiCharacterService.imageUrl(characterKey, img.id)} alt={SLOT_LABEL[slot]}
-                            className="w-full h-full object-cover" />
+                            className="w-full h-full object-contain" />
                         : <div className="w-full h-full flex items-center justify-center text-gray-700"><ImageIcon className="w-6 h-6" /></div>}
                       <div className="absolute bottom-0 inset-x-0 px-2 py-1 bg-gradient-to-t from-black/70 to-transparent">
                         <span className="text-[10px] text-gray-300">{SLOT_LABEL[slot] || `图${slot}`}</span>

@@ -15,6 +15,28 @@ export const SHOT_SIZE_CN: Record<ShotSize, string> = {
   standard: '',
 }
 
+// 顺时针视角名称（index 0..3 ↔ 角色图 slot 1..4）：与后端 ai_character_parser.VIEW_NAMES 同款。
+export const VIEW_NAMES = ['特征图片', '肖像特写', '各种表情', '三个角度视图']
+
+/** 按序号生成一张图的视角描述定义，如 viewCaption('林晚', 1) → '林晚的肖像特写'；超范围/空名返回空串。 */
+export function viewCaption(name: string, index: number): string {
+  const n = (name || '').trim()
+  if (!n || index < 0 || index >= VIEW_NAMES.length) return ''
+  return `${n}的${VIEW_NAMES[index]}`
+}
+
+/** 提示词里「图片N为「…」」中显示的图片名：角色图确保带上角色名（label 若已含角色名则不重复）。 */
+export function promptImageName(im: { label?: string; name?: string; assetType?: 'character' | 'scene' | 'prop' }): string {
+  const label = (im.label || '').trim()
+  const charName = (im.name || '').trim()
+  // 仅角色图需要强制带角色名；场景/道具沿用原 label
+  if (im.assetType === 'character' && charName) {
+    if (!label) return charName
+    return label.includes(charName) ? label : `${charName}·${label}`
+  }
+  return label
+}
+
 // 生成默认时间段：按 2 秒一段覆盖 0..duration
 export function defaultBeats(duration: number): Beat[] {
   const out: Beat[] = []
@@ -140,7 +162,7 @@ export function scanMaterialRefs(text: string): MaterialRefs {
 // - 图片清单前缀：「图片1为「红苹果」、图片2为「奶盖」。」无名称的图仅写「图片N」。
 // - 参考视频/音频：有则各加一行，带名称（无名称用通用措辞），以点到方式说明其作用。
 // - beats 仅取 time + action（首帧/尾帧由用户在 action 文字中自行说明）。
-export interface PromptImage { kind?: 'frame' | 'illustration'; label?: string; frame?: 'first' | 'last'; usage?: string; desc?: string }
+export interface PromptImage { kind?: 'frame' | 'illustration'; label?: string; frame?: 'first' | 'last'; usage?: string; desc?: string; name?: string; assetType?: 'character' | 'scene' | 'prop' }
 export interface PromptMaterial { label?: string }
 export function buildPrompt(opts: {
   global: string
@@ -156,22 +178,32 @@ export function buildPrompt(opts: {
   const lines: string[] = []
 
   // 图片清单：按顺序「图片N为「名称」」，序号与提交给 API 的图片顺序一一对应；首尾帧加标注
+  // 角色图确保带上角色名（promptImageName），避免只显示视角描述行而丢失是谁。
   const roster = (opts.images || []).map((im, i) => {
-    const name = (im.label || '').trim()
+    const name = promptImageName(im)
     const base = name ? `图片${i + 1}为「${name}」` : `图片${i + 1}`
     const fr = im.frame === 'first' ? '(首帧)' : im.frame === 'last' ? '(尾帧)' : ''
     return base + fr
   })
   if (roster.length) lines.push(`本镜参考图：${roster.join('、')}。`)
 
-  // 配置元素的「形态/特征描述」：逐张输出「全片保持图片N「名称」的形象特征：<描述>。」
-  // （来自「配置」里角色/场景/道具的 description，让要素形态/特征贯穿全片，保证生成一致）
+  // 配置元素的「形态/特征描述」：按描述内容去重，同一角色只输出一次「全片保持图片N…中角色的形象特征：<描述>。」
+  // （同一角色多张视角图共享同一份 description，只写一次，避免成片提示词重复注入角色特征）
+  // 每图的「形态/特征描述」：按描述内容去重，同一段描述只输出一次「全片保持图片N…形象特征：<描述>。」
+  // 角色图带上角色名，确保成片提示词里能明确是谁的特征。
+  const descGroups = new Map<string, { nums: number[]; charName: string }>()
   ;(opts.images || []).forEach((im, i) => {
     const desc = (im.desc || '').trim()
     if (!desc) return
-    const name = (im.label || '').trim()
-    const who = name ? `图片${i + 1}「${name}」` : `图片${i + 1}`
-    lines.push(`全片保持${who}的形象特征：${desc}。`)
+    const g = descGroups.get(desc) || { nums: [], charName: '' }
+    g.nums.push(i + 1)
+    if (!g.charName && im.assetType === 'character' && (im.name || '').trim()) g.charName = (im.name || '').trim()
+    descGroups.set(desc, g)
+  })
+  descGroups.forEach(({ nums, charName }, desc) => {
+    const who = nums.map(n => `图片${n}`).join('、')
+    const subject = charName ? `角色「${charName}」` : '中角色'
+    lines.push(`全片保持${who}${subject}的形象特征：${desc}。`)
   })
 
   // 全局参考图的「用途/视角」：逐张输出「全程使用图片N「名称」<用途>。」
@@ -240,7 +272,7 @@ export function buildSeedancePreview(opts: {
   const content: Array<Record<string, unknown>> = [{ type: 'text', text: opts.prompt }]
   // 图片按数组顺序逐个下发，序号即「图片N」（与提示词、后端、API content 顺序完全一致）。
   ;(opts.images || []).forEach((im, i) => {
-    const name = (im.label || '').trim()
+    const name = promptImageName(im)
     const who = name ? `图片${i + 1}·${name}` : `图片${i + 1}`
     content.push({
       type: 'image_url',

@@ -58,7 +58,9 @@ def build_beat_prompt(
     与前端 frontend/src/utils/drama-compose.ts 的 buildPrompt 保持同款规范：
     图片以「图片N」序号 + 名称代入（序号即提交给 API 的 content 顺序），
     确保视频生成 API 能按序号正确区分使用每张素材。
-    - 图片清单前缀：「本镜参考图：图片1为「红苹果」(首帧)、图片2为「奶盖」(尾帧)。」无名称的图仅写「图片N」。
+    - 图片清单前缀：「本镜参考图：图片1为「林晚的肖像特写」、图片2为「奶盖」(尾帧)。」无名称的图仅写「图片N」。
+    - 角色形态/特征描述：按描述内容去重，同一角色只输出一次「全片保持图片N…中角色的形象特征：<描述>。」，
+      避免同一角色多张视角图重复注入特征（成片剧本只含一项角色特征描述）。
     - 全局图片用途：设了 usage 的图片另起一行「全程使用图片N「名称」<用途>。」（如第一视角构图）。
     - 参考视频/音频：有则各加一行，带名称（无名称用通用措辞），以点到方式说明其作用。
     - 整集级全局选项：人称(narration) / 构图视角(composition) / 背景音乐(bgm_label)。
@@ -67,10 +69,21 @@ def build_beat_prompt(
     """
     lines: list[str] = []
 
+    def _prompt_image_name(im: dict) -> str:
+        """图片清单里显示的名称：角色图确保带上角色名（label 已含则不重复）。"""
+        label = (im.get("label") or "").strip()
+        char_name = (im.get("name") or "").strip()
+        if im.get("assetType") == "character" and char_name:
+            if not label:
+                return char_name
+            return label if char_name in label else f"{char_name}·{label}"
+        return label
+
     # 图片清单：按顺序「图片N为「名称」」，序号与提交给 API 的图片顺序一一对应；首尾帧加标注
+    # 角色图确保带上角色名，避免只显示视角描述行而丢失是谁。
     roster: list[str] = []
     for idx, im in enumerate(images or []):
-        name = (im.get("label") or "").strip()
+        name = _prompt_image_name(im)
         base = f"图片{idx + 1}为「{name}」" if name else f"图片{idx + 1}"
         fr = im.get("frame")
         suffix = "(首帧)" if fr == "first" else "(尾帧)" if fr == "last" else ""
@@ -78,15 +91,21 @@ def build_beat_prompt(
     if roster:
         lines.append(f"本镜参考图：{'、'.join(roster)}。")
 
-    # 配置元素的「形态/特征描述」：逐张「全片保持图片N「名称」的形象特征：<描述>。」
-    # （来自「配置」里角色/场景/道具的 description，让要素形态/特征贯穿全片，保证生成一致）
+    # 每图的「形态/特征描述」：按描述内容去重，同一段描述只输出一次「全片保持图片N…形象特征：<描述>。」
+    # 角色图带上角色名，确保成片提示词里能明确是谁的特征。按 desc 首次出现顺序聚合。
+    desc_groups: dict[str, dict] = {}
     for idx, im in enumerate(images or []):
         desc = (im.get("desc") or "").strip()
         if not desc:
             continue
-        name = (im.get("label") or "").strip()
-        who = f"图片{idx + 1}「{name}」" if name else f"图片{idx + 1}"
-        lines.append(f"全片保持{who}的形象特征：{desc}。")
+        g = desc_groups.setdefault(desc, {"nums": [], "char": ""})
+        g["nums"].append(idx + 1)
+        if not g["char"] and im.get("assetType") == "character" and (im.get("name") or "").strip():
+            g["char"] = (im.get("name") or "").strip()
+    for desc, g in desc_groups.items():
+        who = "、".join(f"图片{n}" for n in g["nums"])
+        subject = f"角色「{g['char']}」" if g["char"] else "中角色"
+        lines.append(f"全片保持{who}{subject}的形象特征：{desc}。")
 
     # 全局参考图的「用途/视角」：逐张「全程使用图片N「名称」<用途>。」
     # （对应整集素材库给图片设的用途，如「第一视角构图」，让该约束贯穿全片）
@@ -158,6 +177,7 @@ class ShotImage(BaseModel):
     frame: str = ""           # 首尾帧指定：'first' | 'last' | ''（提示词标注用）
     usage: str = ""           # 用途/视角（全局图片代入「全程使用图片N…」），缺省不输出
     desc: str = ""            # 形态/特征描述（配置元素 description，代入「形象特征」行）
+    assetType: str = ""       # 来源配置元素类型（character/scene/prop）：角色图确保提示词带角色名
 
 class ShotInput(BaseModel):
     id: str

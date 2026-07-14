@@ -24,6 +24,7 @@ export interface ShotImageInput {
   frame?: 'first' | 'last'       // 首尾帧指定（提示词标注）
   usage?: string                 // 用途/视角（全局图片代入「全程使用图片N…」）
   desc?: string                  // 形态/特征描述（配置元素 description，代入「形象特征」行）
+  assetType?: 'character' | 'scene' | 'prop'  // 来源类型：角色图确保提示词带角色名
 }
 
 export interface ShotInput {

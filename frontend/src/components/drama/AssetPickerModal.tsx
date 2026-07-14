@@ -4,8 +4,9 @@
  * 复用 projectAssetService（配置页签同源数据）。选中一个元素后展开其图片缩略图，
  * 默认高亮主图、可点选任一张（主图/副图）。确认后回调选用信息：
  *   key   = 选中图片的 MinIO object key（image_path，可直接进生成链路）
- *   label = 元素名称（代入提示词「图片N为「名称」」）
- *   desc  = 元素描述（代入提示词「全片保持图片N「名称」的形象特征：…」）
+ *   label = 该图视角描述（caption，如「林晚的肖像特写」；无则回退元素名称）→ 代入「图片N为「名称」」
+ *   caption = 该图视角描述定义（同 label，单独透出便于溯源/展示）
+ *   desc  = 元素描述（代入提示词「全片保持图片N…中角色的形象特征：…」，同一角色去重后只出现一次）
  *   name / assetId / assetType = 溯源与展示
  */
 import { useState, useEffect, useCallback } from 'react'
@@ -23,6 +24,7 @@ const TYPE_TABS: { key: AssetType; label: string; icon: typeof Users }[] = [
 export interface AssetPickResult {
   key: string
   label: string
+  caption: string
   desc: string
   name: string
   assetId: string
@@ -74,10 +76,13 @@ export default function AssetPickerModal({
 
   const confirm = () => {
     if (!selected || !activeImg) return
+    const caption = (activeImg.caption || '').trim()
     onPick({
       key: activeImg.image_path,
-      label: selected.name,
-      desc: selected.description || '',
+      label: caption || selected.name,
+      caption,
+      // 每图描述用该图自身的视角描述（caption，按四视图逐行映射），而非整份角色描述全文
+      desc: caption || selected.description || '',
       name: selected.name,
       assetId: selected.asset_id,
       assetType: selected.asset_type,
@@ -138,9 +143,9 @@ export default function AssetPickerModal({
                     <div key={a.asset_id} onClick={() => setSelectedAssetId(a.asset_id)}
                       className={`rounded-xl overflow-hidden border cursor-pointer transition-colors ${
                         active ? 'border-indigo-400/70 bg-indigo-500/10' : 'border-white/8 hover:border-white/20 bg-white/[0.02]'}`}>
-                      <div className="aspect-[4/3] bg-black/30 overflow-hidden">
+                      <div className="aspect-[3/4] bg-black/30 overflow-hidden">
                         {cover
-                          ? <img src={projectAssetService.imageUrl(a.asset_id, cover.id)} alt={a.name} className="w-full h-full object-cover" />
+                          ? <img src={projectAssetService.imageUrl(a.asset_id, cover.id)} alt={a.name} className="w-full h-full object-contain" />
                           : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-5 h-5 text-gray-700" /></div>}
                       </div>
                       <div className="p-2">
@@ -160,7 +165,10 @@ export default function AssetPickerModal({
               <div className="space-y-3">
                 <div>
                   <div className="text-sm font-semibold text-gray-100">{selected.name}</div>
-                  {selected.description
+                  {/* 当前选中图的描述（每图独立：角色四视图按行/表情映射）；无则回退整体描述提示 */}
+                  {(activeImg?.caption || '').trim()
+                    ? <div className="text-[11px] text-indigo-300/90 mt-1 leading-relaxed">当前图片：{activeImg!.caption}</div>
+                    : selected.description
                     ? <div className="text-[11px] text-gray-400 mt-1 leading-relaxed">{selected.description}</div>
                     : <div className="text-[11px] text-amber-400/70 mt-1">该{typeLabel}未填描述，将只代入名称、不注入形象特征。</div>}
                 </div>
@@ -173,18 +181,24 @@ export default function AssetPickerModal({
                 {/* 图片缩略图选择 */}
                 {selected.images.length > 0 && (
                   <div>
-                    <p className="text-[10px] text-gray-500 mb-1.5">选用哪张图作为参考图（默认主图，可切换）</p>
+                    <p className="text-[10px] text-gray-500 mb-1.5">选用哪张图作为参考图（默认主图，可切换）。图下角标为该图视角描述</p>
                     <div className="flex items-center gap-2 flex-wrap">
                       {selected.images.map(img => {
                         const active = img.id === activeImg?.id
                         return (
                           <button key={img.id} onClick={() => setSelectedImageId(img.id)}
+                            title={img.caption || undefined}
                             className={`group relative w-16 h-16 rounded-lg overflow-hidden border ${
                               active ? 'border-indigo-400 ring-2 ring-indigo-400/40' : 'border-white/10 hover:border-white/25'}`}>
                             <img src={projectAssetService.imageUrl(selected.asset_id, img.id)} alt="" className="w-full h-full object-cover" />
                             {img.is_cover === 1 && (
                               <div className="absolute top-0.5 left-0.5 w-4 h-4 flex items-center justify-center rounded bg-black/60" title="主图">
                                 <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
+                              </div>
+                            )}
+                            {img.caption && (
+                              <div className="absolute bottom-0 inset-x-0 px-1 py-0.5 bg-gradient-to-t from-black/80 to-transparent">
+                                <span className="block text-[8px] text-gray-200 truncate leading-tight">{img.caption}</span>
                               </div>
                             )}
                             {active && (
@@ -210,7 +224,9 @@ export default function AssetPickerModal({
         {/* 底部操作条 */}
         <div className="flex-shrink-0 px-5 pb-5 pt-3 flex items-center gap-3 border-t border-white/5">
           <span className="text-[11px] text-gray-500 flex-1">
-            {selected && activeImg ? `将选用「${selected.name}」的这张图作为参考图` : '请选择一个带图片的元素'}
+            {selected && activeImg
+              ? `将选用「${activeImg.caption || selected.name}」作为参考图`
+              : '请选择一个带图片的元素'}
           </span>
           <button onClick={onClose}
             className="px-4 py-2.5 rounded-xl text-sm border border-white/10 text-gray-400 hover:bg-white/[0.04]">

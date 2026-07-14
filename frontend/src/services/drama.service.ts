@@ -510,7 +510,7 @@ export const dramaService = {
   async previewPayload(params: {
     global_desc?: string
     beats?: { time?: string; action?: string; shotSize?: string }[]
-    images?: { key: string; label?: string; frame?: 'first' | 'last'; usage?: string; desc?: string }[]
+    images?: { key: string; label?: string; frame?: 'first' | 'last'; usage?: string; desc?: string; name?: string; assetType?: 'character' | 'scene' | 'prop' }[]
     reference_video_key?: string
     reference_video_label?: string
     audio_key?: string
