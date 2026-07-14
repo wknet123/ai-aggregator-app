@@ -112,15 +112,16 @@ export default function ShotStoryboardEditor({
     onUpdate({ images: next })
   }
 
-  // ── 从配置选取：把一个角色/场景/道具的选中图追加为本镜参考图（携带视角名称+描述+来源）──
-  const onPickFromConfig = (sel: { key: string; label: string; caption?: string; desc: string; name: string; assetId: string; assetType: 'character' | 'scene' | 'prop' }) => {
+  // ── 从配置选取：把角色/场景/道具的选中图追加为本镜参考图（角色默认带入全部四视图，各附标题描述）──
+  const onPickFromConfig = (sels: { key: string; label: string; caption?: string; desc: string; name: string; assetId: string; assetType: 'character' | 'scene' | 'prop' }[]) => {
     setShowPicker(false)
+    if (!sels.length) return
     onUpdate({
-      images: [...images, {
-        key: sel.key, name: sel.name, kind: 'frame',
+      images: [...images, ...sels.map(sel => ({
+        key: sel.key, name: sel.name, kind: 'frame' as const,
         label: sel.caption || sel.label, desc: sel.desc,
         assetId: sel.assetId, assetType: sel.assetType,
-      }],
+      }))],
     })
   }
 

@@ -1264,14 +1264,15 @@ function EpisodeGlobalOptions({ ep, dramaProjectId, disabled, onPatchEp }: {
   }
   const updateAsset = (id: string, patch: Partial<EpisodeAsset>) =>
     onPatchEp({ assets: assets.map(a => (a.id === id ? { ...a, ...patch } : a)) })
-  // 从配置选取：追加一张图片素材（默认全局应用到所有分镜），携带命名+描述+来源
-  const onPickFromConfig = (sel: { key: string; label: string; desc: string; name: string; assetId: string; assetType: 'character' | 'scene' | 'prop' }) => {
+  // 从配置选取：追加图片素材（角色默认带入全部四视图，各附标题描述；默认全局应用到所有分镜）
+  const onPickFromConfig = (sels: { key: string; label: string; caption?: string; desc: string; name: string; assetId: string; assetType: 'character' | 'scene' | 'prop' }[]) => {
     setShowPicker(false)
-    const asset: EpisodeAsset = {
-      id: genId(), key: sel.key, name: sel.name, label: sel.label, type: 'image',
+    if (!sels.length) return
+    const newAssets: EpisodeAsset[] = sels.map(sel => ({
+      id: genId(), key: sel.key, name: sel.name, label: sel.caption || sel.label, type: 'image' as const,
       desc: sel.desc, assetId: sel.assetId, assetType: sel.assetType, applyToAll: true,
-    }
-    onPatchEp({ assets: [...assets, asset] })
+    }))
+    onPatchEp({ assets: [...assets, ...newAssets] })
   }
   const removeAsset = (id: string) => {
     const a = assets.find(x => x.id === id)

@@ -36,7 +36,7 @@ export default function AssetPickerModal({
 }: {
   projectId: string
   onClose: () => void
-  onPick: (sel: AssetPickResult) => void
+  onPick: (sel: AssetPickResult[]) => void
 }) {
   const [type, setType] = useState<AssetType>('character')
   const [assets, setAssets] = useState<ProjectAssetRecord[]>([])
@@ -74,19 +74,28 @@ export default function AssetPickerModal({
   const activeImg = selected?.images.find(i => i.id === selectedImageId)
     || selected?.images.find(i => i.is_cover === 1) || selected?.images[0] || null
 
-  const confirm = () => {
-    if (!selected || !activeImg) return
-    const caption = (activeImg.caption || '').trim()
-    onPick({
-      key: activeImg.image_path,
-      label: caption || selected.name,
+  // 把一张图片映射为一条选用结果（每图带自身 caption 作视角描述）
+  const toResult = (img: ProjectAssetRecord['images'][number]): AssetPickResult => {
+    const caption = (img.caption || '').trim()
+    return {
+      key: img.image_path,
+      label: caption || selected!.name,
       caption,
       // 每图描述用该图自身的视角描述（caption，按四视图逐行映射），而非整份角色描述全文
-      desc: caption || selected.description || '',
-      name: selected.name,
-      assetId: selected.asset_id,
-      assetType: selected.asset_type,
-    })
+      desc: caption || selected!.description || '',
+      name: selected!.name,
+      assetId: selected!.asset_id,
+      assetType: selected!.asset_type,
+    }
+  }
+
+  const confirm = () => {
+    if (!selected || !activeImg) return
+    // 角色：默认一次性带入其全部图片（四视图，各附自身标题描述）；场景/道具：仅选中的那张
+    const imgs = selected.asset_type === 'character' && selected.images.length > 0
+      ? [...selected.images].sort((a, b) => a.sort_order - b.sort_order)
+      : [activeImg]
+    onPick(imgs.map(toResult))
   }
 
   return (
@@ -225,7 +234,9 @@ export default function AssetPickerModal({
         <div className="flex-shrink-0 px-5 pb-5 pt-3 flex items-center gap-3 border-t border-white/5">
           <span className="text-[11px] text-gray-500 flex-1">
             {selected && activeImg
-              ? `将选用「${activeImg.caption || selected.name}」作为参考图`
+              ? (selected.asset_type === 'character'
+                  ? `将添加「${selected.name}」的全部 ${selected.images.length} 幅图片（各附标题描述）`
+                  : `将选用「${activeImg.caption || selected.name}」作为参考图`)
               : '请选择一个带图片的元素'}
           </span>
           <button onClick={onClose}
@@ -234,7 +245,7 @@ export default function AssetPickerModal({
           </button>
           <button onClick={confirm} disabled={!selected || !activeImg}
             className="px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:opacity-90 disabled:opacity-40">
-            <Check className="w-4 h-4" />确认选用
+            <Check className="w-4 h-4" />{selected?.asset_type === 'character' ? '添加全部图片' : '确认选用'}
           </button>
         </div>
       </div>
