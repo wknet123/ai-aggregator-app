@@ -156,11 +156,19 @@ export interface AgentRun {
   steps?: AgentStep[]
 }
 
+export interface ModelOption {
+  model: string
+  label: string
+  cost: number
+  desc?: string
+}
+
 export interface CreateRunBody {
   goal: string
   inputs?: Record<string, any> | null
   agent_key?: string
   confirm_mode?: 'auto' | 'checkpoint' | 'step'
+  model_prefs?: Record<string, string> | null   // {plugin_name: model}
 }
 
 export interface ConfirmBody {
@@ -229,6 +237,12 @@ class AgentService {
     return r.data.data.items
   }
 
+  // 各能力可选模型 + 单价：{ plugin_name: [{model,label,cost,desc}] }
+  async listModelOptions(): Promise<Record<string, ModelOption[]>> {
+    const r = await apiClient.get('/api/v1/agents/model-options')
+    return r.data.data.options
+  }
+
   // ── Run ──────────────────────────────────────────────────────────────────
   async createRun(body: CreateRunBody): Promise<{ run_id: string }> {
     const r = await apiClient.post('/api/v1/agents/runs', body)
@@ -273,6 +287,12 @@ class AgentService {
     const r = await apiClient.post('/api/v1/agents/uploads', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
+    return r.data.data
+  }
+
+  // 从「我的作品」选一件图片作为 Run 输入素材：后端复制为私有 key 返回。
+  async uploadFromWork(taskId: string): Promise<{ key: string; content_type: string }> {
+    const r = await apiClient.post('/api/v1/agents/uploads/from-work', { task_id: taskId })
     return r.data.data
   }
 

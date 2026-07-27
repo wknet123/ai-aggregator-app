@@ -29,6 +29,7 @@ def _clamp_duration(duration, lo: int = 3, hi: int = 12, default: int = 5) -> in
 async def run_seedance(
     ctx: PluginContext, prompt: str, *, ratio: str, duration: int,
     reference_image: bytes | None = None, source_hint: str = "",
+    model: str | None = None,
 ) -> PluginResult:
     """提交 Seedance 任务 → 同步轮询直到出片/失败 → 落 MinIO → 返回 video 产物。"""
     prompt = (prompt or "").strip()
@@ -39,6 +40,7 @@ async def run_seedance(
 
     tid = await ctx.gateway.seedance_create(
         prompt, reference_image=reference_image, ratio=ratio, duration=duration,
+        model=model or None,
     )
     logger.info("seedance task %s submitted (ratio=%s dur=%s%s)", tid, ratio, duration,
                 " +首帧" if reference_image else "")
@@ -80,3 +82,13 @@ _DURATION_SCHEMA = {
     "default": 5,
     "description": "视频时长（秒，3-12）",
 }
+
+
+def _model_schema(plugin_name: str) -> dict:
+    """按插件的候选模型清单构造 model 字段 schema。"""
+    from app.core.pricing import model_options
+    return {
+        "type": "string",
+        "enum": [o["model"] for o in model_options(plugin_name)],
+        "description": "视频模型（不填用影视级默认）；经济模型积分更低。",
+    }

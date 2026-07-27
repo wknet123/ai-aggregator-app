@@ -21,6 +21,7 @@ from app.services.storage import get_storage_service, StorageService
 from app.schemas.response import ResponseBase
 from app.schemas.file import GenerationTaskCreate, GenerationTaskResponse
 from app.core.credits import InsufficientCreditsError
+from app.core.pricing import max_prompt_chars
 from app.integrations.openai.client import OpenAIClient
 from app.config import Settings
 from app.utils.helpers import get_user_output_path
@@ -228,6 +229,13 @@ async def generate_gpt_image(
     model_id = task.model_id
     if model_id not in GPT_IMAGE_COSTS:
         raise HTTPException(status_code=400, detail=f"Invalid model ID: {model_id}")
+
+    _limit = max_prompt_chars(model_id)
+    if task.prompt and len(task.prompt) > _limit:
+        raise HTTPException(
+            status_code=400,
+            detail=f"提示词过长：当前 {len(task.prompt)} 字，该模型最多 {_limit} 字，请精简后重试",
+        )
     
     # Get parameters - try to parse from aspect_ratio field for quality
     # Frontend might send quality in aspect_ratio field for this model

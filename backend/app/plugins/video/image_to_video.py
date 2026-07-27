@@ -8,7 +8,7 @@ from __future__ import annotations
 from app.plugins.base import BasePlugin, PluginContext, PluginResult
 from app.plugins.registry import register_plugin
 from app.core.pricing import plugin_cost
-from app.plugins.video._common import run_seedance, _ASPECT_SCHEMA, _DURATION_SCHEMA
+from app.plugins.video._common import run_seedance, _ASPECT_SCHEMA, _DURATION_SCHEMA, _model_schema
 
 
 @register_plugin
@@ -30,6 +30,7 @@ class VideoImageToVideoPlugin(BasePlugin):
             "image_key": {"type": "string", "description": "首帧图片的产物 key（上一步 image 工具返回）"},
             "aspect_ratio": _ASPECT_SCHEMA,
             "duration": _DURATION_SCHEMA,
+            "model": _model_schema("video.image_to_video"),
         },
         "required": ["prompt", "image_key"],
     }
@@ -48,4 +49,5 @@ class VideoImageToVideoPlugin(BasePlugin):
             duration=params.get("duration", 5),
             reference_image=data,
             source_hint="以指定图为首帧",
+            model=(params.get("model") or "").strip() or None,
         )

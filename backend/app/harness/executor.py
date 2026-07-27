@@ -78,6 +78,21 @@ async def execute_run(run_id: str) -> None:
         run.status = "running"
         run.confirm_decision = None              # 消费决定，防重复恢复
         run.pending_confirmation = None          # 清旧的待确认 payload
+        # 回写挂起时留下的 confirm 占位步终态，避免「Run 已完成、该步仍 pending」。
+        if entry == "confirm_resume" and isinstance(decision, dict):
+            _CONFIRM_STEP_STATUS = {
+                "continue": "completed", "edit": "completed",
+                "skip": "skipped", "abort": "cancelled",
+            }
+            pending_confirm = (await db.execute(
+                select(AgentStep).where(
+                    AgentStep.run_id == run_id,
+                    AgentStep.type == "confirm",
+                    AgentStep.status == "pending",
+                ).order_by(AgentStep.step_index.desc())
+            )).scalars().first()
+            if pending_confirm is not None:
+                pending_confirm.status = _CONFIRM_STEP_STATUS.get(decision.get("action"), "completed")
         # 运行配置：fresh 从库加载 Agent+Skill 合并并快照；resume 读快照（防定义漂移/保证续跑一致）
         if entry == "fresh":
             try:
@@ -93,6 +108,15 @@ async def execute_run(run_id: str) -> None:
         else:
             runtime = run.agent_snapshot or merge_skills(DEFAULT_AGENT, [])
         user_id, tenant_id, goal, inputs = run.user_id, run.tenant_id, run.goal, run.inputs
+        # 取出用户选定的模型偏好（不进 user_text），注入 constraints 供 _enforce_constraints 使用。
+        model_prefs = None
+        if isinstance(inputs, dict) and "__model_prefs__" in inputs:
+            inputs = dict(inputs)
+            model_prefs = inputs.pop("__model_prefs__", None)
+        if model_prefs:
+            constraints = dict(runtime.get("constraints") or {})
+            constraints["model_by_plugin"] = model_prefs
+            runtime["constraints"] = constraints
         policy = runtime["policy"]
         await db.commit()
 
@@ -268,7 +292,8 @@ async def execute_run(run_id: str) -> None:
             r = await _load_run(db, run_id)
             if r and r.status not in ("completed", "failed", "cancelled"):
                 r.status = "cancelled"
-                await db.commit()
+            await _settle_dangling_confirm_steps(db, run_id, "cancelled")
+            await db.commit()
         return
     except Exception as exc:  # noqa: BLE001
         logger.exception("run %s 执行失败", run_id)
@@ -277,7 +302,8 @@ async def execute_run(run_id: str) -> None:
             if r and r.status not in ("cancelled",):
                 r.status = "failed"
                 r.error_message = str(exc)[:2000]
-                await db.commit()
+            await _settle_dangling_confirm_steps(db, run_id, "failed")
+            await db.commit()
         return
 
     # 收尾
@@ -300,7 +326,14 @@ async def execute_run(run_id: str) -> None:
                 run_id=run_id, step_index=step_counter["i"], type="summary",
                 thought=summary, output_data={"artifacts": artifacts}, status="completed",
             ))
+            await _settle_dangling_confirm_steps(db, run_id, "completed")
+            works = await _register_artifacts_as_works(
+                db, user_id=user_id, tenant_id=tenant_id, run_id=run_id,
+                agent_key=(r.agent_key or ""),
+                goal=goal, artifacts=artifacts,
+            )
             await db.commit()
+            logger.info("run %s 登记 %d 件产物为作品", run_id, works)
     logger.info("run %s 完成，产物 %d 件，累计花费 %s", run_id, len(artifacts),
                 (r.total_cost if r else "?"))
 
@@ -326,6 +359,14 @@ def _enforce_constraints(plugin, args: dict, constraints: dict) -> dict:
             cur = None
         if cur is None or cur > max_dur:
             args["duration"] = max_dur
+    # 用户为该插件选定的模型（按需求+单价）：仅当 schema 暴露 model 且属该插件候选时注入。
+    model_by_plugin = constraints.get("model_by_plugin") or {}
+    chosen = model_by_plugin.get(getattr(plugin, "name", ""))
+    if chosen and "model" in props:
+        from app.core.pricing import model_options
+        allowed = {o["model"] for o in model_options(getattr(plugin, "name", ""))}
+        if chosen in allowed:
+            args["model"] = chosen
     return args
 
 
@@ -342,6 +383,54 @@ async def _enter_awaiting(run_id, step_counter, payload: dict) -> None:
             r.status = "awaiting_confirmation"
             r.pending_confirmation = payload
         await db.commit()
+
+
+async def _register_artifacts_as_works(
+    db, *, user_id: int, tenant_id: int, run_id: str, agent_key: str,
+    goal: str, artifacts: list,
+) -> int:
+    """把 Run 的最终 image/video 产物登记为「作品」（generation_tasks，show_in_gallery=1），
+    使其出现在「我的作品」/AI图片/AI视频列表。复用现有 /task/{id}/file 取流端点。
+    需与调用方共用同一 session（由调用方 commit）。返回登记数量。"""
+    import json
+    import uuid as _uuid
+    from app.models.generation_task import GenerationTask
+
+    n = 0
+    for a in artifacts or []:
+        a_type = a.get("type")
+        key = a.get("key")
+        if a_type not in ("image", "video") or not key:
+            continue
+        db.add(GenerationTask(
+            task_id=f"agent-{run_id}-{_uuid.uuid4().hex[:8]}",
+            user_id=user_id, tenant_id=tenant_id,
+            model_id=f"agent:{agent_key}",          # 标记来源为智能体
+            task_type=a_type,
+            prompt=(goal or "")[:2000] or "智能体产物",
+            parameters=json.dumps({"source": "agent", "run_id": run_id,
+                                   "note": a.get("note")}, ensure_ascii=False),
+            status="completed", progress=100,
+            result_path=key,                         # MinIO key → 走 is_minio_key 取流
+            show_in_gallery=1,
+        ))
+        n += 1
+    return n
+
+
+async def _settle_dangling_confirm_steps(db, run_id: str, final_status: str) -> None:
+    """Run 落终态时，把仍 pending 的 confirm 占位步翻成对应终态，避免「Run 已完成、步骤仍 pending」。
+    需与调用方共用同一 session（由调用方 commit）。"""
+    fallback = "cancelled" if final_status in ("cancelled", "failed") else "completed"
+    rows = (await db.execute(
+        select(AgentStep).where(
+            AgentStep.run_id == run_id,
+            AgentStep.type == "confirm",
+            AgentStep.status == "pending",
+        )
+    )).scalars().all()
+    for s in rows:
+        s.status = fallback
 
 
 async def _write_step(run_id, step_counter, kind, plugin_name, tool_call_id,

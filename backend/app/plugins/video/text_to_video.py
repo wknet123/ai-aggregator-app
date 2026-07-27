@@ -4,7 +4,7 @@ from __future__ import annotations
 from app.plugins.base import BasePlugin, PluginContext, PluginResult
 from app.plugins.registry import register_plugin
 from app.core.pricing import plugin_cost
-from app.plugins.video._common import run_seedance, _ASPECT_SCHEMA, _DURATION_SCHEMA
+from app.plugins.video._common import run_seedance, _ASPECT_SCHEMA, _DURATION_SCHEMA, _model_schema
 
 
 @register_plugin
@@ -22,6 +22,7 @@ class VideoTextToVideoPlugin(BasePlugin):
             "prompt": {"type": "string", "description": "详细的画面/动作描述（越具体越好）"},
             "aspect_ratio": _ASPECT_SCHEMA,
             "duration": _DURATION_SCHEMA,
+            "model": _model_schema("video.text_to_video"),
         },
         "required": ["prompt"],
     }
@@ -34,4 +35,5 @@ class VideoTextToVideoPlugin(BasePlugin):
             ctx, params.get("prompt", ""),
             ratio=params.get("aspect_ratio", "16:9"),
             duration=params.get("duration", 5),
+            model=(params.get("model") or "").strip() or None,
         )

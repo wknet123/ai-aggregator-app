@@ -17,6 +17,7 @@ import MotionImitation from './pages/MotionImitation'
 import Vid2Vid from './pages/Vid2Vid'
 import OmniWeaverPro from './pages/OmniWeaverPro'
 import AgentStudio from './pages/AgentStudio'
+import AgentWorkbench from './pages/AgentWorkbench'
 import AdminGateway from './pages/AdminGateway'
 import DouyinCallback from './pages/DouyinCallback'
 import { useAuthStore } from './store/auth.store'
@@ -120,6 +121,10 @@ function App() {
         <Route
           path="/agent-studio"
           element={isAuthenticated ? <AgentStudio /> : <Navigate to="/login" />}
+        />
+        <Route
+          path="/studio"
+          element={isAuthenticated ? <AgentWorkbench /> : <Navigate to="/login" />}
         />
         <Route path="/douyin/callback" element={<DouyinCallback />} />
         <Route

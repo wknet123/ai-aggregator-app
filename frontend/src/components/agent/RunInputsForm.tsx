@@ -6,8 +6,9 @@
  * 值形状：{ [field.key]: string | number }（image 字段值为 MinIO key）。
  */
 import { useState } from 'react'
-import { Loader2, Upload, X } from 'lucide-react'
+import { Loader2, Upload, X, Images } from 'lucide-react'
 import { agentService, type InputField } from '../../services/agent.service'
+import WorkPickerModal from './WorkPickerModal'
 
 interface Props {
   fields: InputField[]
@@ -20,6 +21,7 @@ export default function RunInputsForm({ fields, values, onChange }: Props) {
   const [previews, setPreviews] = useState<Record<string, string>>({})
   const [uploading, setUploading] = useState<Record<string, boolean>>({})
   const [uploadErr, setUploadErr] = useState<Record<string, string>>({})
+  const [pickingFor, setPickingFor] = useState<string>('')   // 正在为哪个 image 字段选作品
 
   const set = (key: string, val: any) => onChange({ ...values, [key]: val })
 
@@ -51,6 +53,18 @@ export default function RunInputsForm({ fields, values, onChange }: Props) {
       return rest
     })
     set(field.key, '')
+  }
+
+  // 从「我的作品」选取后：key 已由后端复制到本人上传目录，取鉴权预览并存值。
+  const handlePickedWork = async (fieldKey: string, key: string) => {
+    set(fieldKey, key)
+    try {
+      const url = await agentService.uploadFileObjectUrl(key)
+      setPreviews((m) => {
+        if (m[fieldKey]) URL.revokeObjectURL(m[fieldKey])
+        return { ...m, [fieldKey]: url }
+      })
+    } catch { /* 预览失败不阻断，值已存 */ }
   }
 
   if (!fields.length) return null
@@ -106,14 +120,20 @@ export default function RunInputsForm({ fields, values, onChange }: Props) {
                   )}
                 </div>
               ) : (
-                <label className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-lg border border-dashed border-gray-700 text-xs text-gray-400 cursor-pointer hover:border-gray-500">
-                  {uploading[f.key]
-                    ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : <Upload className="w-4 h-4" />}
-                  {uploading[f.key] ? '上传中...' : '选择图片上传'}
-                  <input type="file" accept="image/*" className="hidden"
-                    onChange={(e) => handleFile(f, e.target.files?.[0])} />
-                </label>
+                <div className="flex gap-2">
+                  <label className="flex-1 flex items-center justify-center gap-1.5 px-3 py-3 rounded-lg border border-dashed border-gray-700 text-xs text-gray-400 cursor-pointer hover:border-gray-500">
+                    {uploading[f.key]
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <Upload className="w-4 h-4" />}
+                    {uploading[f.key] ? '上传中...' : '本地上传'}
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={(e) => handleFile(f, e.target.files?.[0])} />
+                  </label>
+                  <button type="button" onClick={() => setPickingFor(f.key)}
+                    className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-lg border border-dashed border-gray-700 text-xs text-gray-400 hover:border-pink-500/60 hover:text-pink-300">
+                    <Images className="w-4 h-4" />从我的作品
+                  </button>
+                </div>
               )}
               {uploadErr[f.key] && <p className="text-[11px] text-red-400 mt-1">{uploadErr[f.key]}</p>}
             </div>
@@ -122,6 +142,12 @@ export default function RunInputsForm({ fields, values, onChange }: Props) {
           {f.help && f.type !== 'image' && <p className="text-[11px] text-gray-600 mt-0.5">{f.help}</p>}
         </label>
       ))}
+
+      {pickingFor && (
+        <WorkPickerModal
+          onPick={(key) => handlePickedWork(pickingFor, key)}
+          onClose={() => setPickingFor('')} />
+      )}
     </div>
   )
 }

@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body
 from pydantic import BaseModel
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ class CreateRunBody(BaseModel):
     inputs: Optional[dict] = None
     agent_key: str = "default"
     confirm_mode: Optional[str] = None    # 不传则取 agent.policy.confirm_mode（兜底 auto）
+    model_prefs: Optional[dict] = None    # {plugin_name: model}：用户为各能力选定的模型（按需求+单价）
 
 
 class ConfirmBody(BaseModel):
@@ -123,6 +124,13 @@ async def list_plugins(current_user: User = Depends(get_current_user)):
     })
 
 
+@router.get("/model-options", response_model=ResponseBase)
+async def list_model_options(current_user: User = Depends(get_current_user)):
+    """各能力（plugin）的可选模型清单 + 单价，供工作台"按需求+单价选模型"。"""
+    from app.core.pricing import AGENT_MODEL_OPTIONS
+    return ResponseBase(success=True, data={"options": AGENT_MODEL_OPTIONS})
+
+
 @router.post("/runs", response_model=ResponseBase)
 async def create_run(
     body: CreateRunBody,
@@ -146,10 +154,15 @@ async def create_run(
     else:
         confirm_mode = (runtime.get("policy") or {}).get("confirm_mode") or "auto"
 
+    # 用户选定的模型偏好随 inputs 携带（保留键），executor 会取出并注入 constraints。
+    inputs = dict(body.inputs or {})
+    if body.model_prefs:
+        inputs["__model_prefs__"] = body.model_prefs
+
     run_id = str(uuid.uuid4())
     run = AgentRun(
         run_id=run_id, user_id=current_user.id, tenant_id=current_user.tenant_id,
-        agent_key=agent_key, goal=goal, inputs=body.inputs,
+        agent_key=agent_key, goal=goal, inputs=inputs or None,
         status="pending", progress=0, confirm_mode=confirm_mode,
     )
     db.add(run)
@@ -341,6 +354,50 @@ async def upload_run_input(
     ct = StorageService.content_type_for(filename) or content_type or "image/png"
     await get_storage_service().upload_bytes(data, key, ct)
     return ResponseBase(success=True, message="已上传", data={"key": key, "content_type": ct})
+
+
+@router.post("/uploads/from-work", response_model=ResponseBase)
+async def upload_from_work(
+    task_id: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """把「我的作品」里已有的一件图片产物复制为 Run 输入素材，返回新 key。
+
+    仅限本人、已完成、图片类作品。复制到 users/{uid}/uploads/agent-inputs/ 下，
+    使其与本地上传的素材走同一鉴权预览 / image_key 链路。
+    """
+    from app.models.generation_task import GenerationTask
+    from app.services.storage import get_storage_service, StorageService
+
+    task = (await db.execute(
+        select(GenerationTask).where(
+            GenerationTask.task_id == task_id,
+            GenerationTask.user_id == current_user.id,
+            GenerationTask.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="作品不存在或无权访问")
+    if task.task_type != "image":
+        raise HTTPException(status_code=400, detail="仅支持选择图片作品作为素材")
+    src_key = task.result_path
+    if not src_key or not StorageService.is_minio_key(src_key):
+        raise HTTPException(status_code=400, detail="该作品无可用的图片文件")
+
+    try:
+        data, content_type = await get_storage_service().get_object_bytes(src_key)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail=f"读取作品文件失败: {exc}")
+
+    ext = src_key.rsplit(".", 1)[-1].lower() if "." in src_key else "png"
+    if ext not in ("png", "jpg", "jpeg", "webp", "gif", "bmp"):
+        ext = "png"
+    filename = f"agent-inputs/{uuid.uuid4().hex}.{ext}"
+    key = get_storage_service().user_upload_key(current_user.id, filename)
+    ct = StorageService.content_type_for(filename) or content_type or "image/png"
+    await get_storage_service().upload_bytes(data, key, ct)
+    return ResponseBase(success=True, message="已选取", data={"key": key, "content_type": ct})
 
 
 @router.get("/uploads/file")

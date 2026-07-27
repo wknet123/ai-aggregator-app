@@ -16,6 +16,7 @@ from app.integrations.google.client import GoogleAIClient
 from app.services.google_service import GoogleService
 from app.services.storage import get_storage_service, StorageService
 from app.core.credits import InsufficientCreditsError
+from app.core.pricing import max_prompt_chars
 from app.config import Settings
 from app.utils.helpers import get_user_upload_path, get_user_output_path
 from pathlib import Path
@@ -178,6 +179,13 @@ async def generate_image(
     if not settings.AI_GATEWAY_API_KEY:
         raise HTTPException(status_code=500, detail="AI 网关未配置")
 
+    _limit = max_prompt_chars(task.model_id)
+    if task.prompt and len(task.prompt) > _limit:
+        raise HTTPException(
+            status_code=400,
+            detail=f"提示词过长：当前 {len(task.prompt)} 字，该模型最多 {_limit} 字，请精简后重试",
+        )
+
     # Check credits before starting task
     google_service = GoogleService(db, user_id=current_user.id)
     cost = google_service._calculate_image_cost(task.model_id)
@@ -275,7 +283,16 @@ async def generate_video(
     # For image-to-video mode, first frame is required
     if generation_mode == 'image-to-video' and not task.first_frame_id:
         raise HTTPException(status_code=400, detail="First frame image is required for image-to-video generation")
-    
+
+    # Validate prompt length against the *resolved* gateway video model's real limit.
+    gateway_video_model = VIDEO_MODEL_MAPPING.get(task.model_id, settings.GATEWAY_DRAMA_VIDEO_MODEL)
+    _limit = max_prompt_chars(gateway_video_model)
+    if task.prompt and len(task.prompt) > _limit:
+        raise HTTPException(
+            status_code=400,
+            detail=f"提示词过长：当前 {len(task.prompt)} 字，该模型最多 {_limit} 字，请精简后重试",
+        )
+
     # Check credits before starting task
     google_service = GoogleService(db, user_id=current_user.id)
     cost = google_service._calculate_video_cost(task.duration or 5)
@@ -353,7 +370,7 @@ async def generate_video(
     await db.commit()
 
     # Resolve gateway video model + clamp duration for Hailuo (only 6 or 10s).
-    gateway_video_model = VIDEO_MODEL_MAPPING.get(task.model_id, settings.GATEWAY_DRAMA_VIDEO_MODEL)
+    # gateway_video_model was resolved above for prompt-length validation.
     duration = task.duration or 6
     if "happyhorse" not in gateway_video_model.lower():
         # Hailuo (海螺): supports only 6 or 10 seconds.

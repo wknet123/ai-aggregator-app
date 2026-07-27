@@ -6,6 +6,7 @@ import uuid
 
 from app.plugins.base import BasePlugin, PluginContext, PluginResult
 from app.plugins.registry import register_plugin
+from app.core.pricing import model_options
 from app.core.pricing import plugin_cost
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,11 @@ class ImageGeneratePlugin(BasePlugin):
                 "type": "string",
                 "description": "参考图的存储 key（做图生图/以图改图时提供；用户上传或前序产物的 key）。不提供则为纯文生图。",
             },
+            "model": {
+                "type": "string",
+                "enum": [o["model"] for o in model_options("image.generate")],
+                "description": "出图模型（不填用标准模型）；高清模型积分更高。",
+            },
         },
         "required": ["prompt"],
     }
@@ -54,6 +60,7 @@ class ImageGeneratePlugin(BasePlugin):
             raise ValueError("image.generate 需要 prompt")
         ratio = params.get("aspect_ratio", "1:1")
         size = _RATIO_SIZE.get(ratio, "1024*1024")
+        model = (params.get("model") or "").strip() or None
 
         # 0) 可选参考图：读取字节做图生图（底层 gateway.generate_image 支持 image 入参）
         ref_image = None
@@ -62,7 +69,7 @@ class ImageGeneratePlugin(BasePlugin):
             ref_image, _ = await ctx.storage.get_object_bytes(image_key)
 
         # 1) 调 gateway 生图（有参考图则为图生图）→ 拿结果 URL
-        urls = await ctx.gateway.generate_image(prompt, size=size, n=1, image=ref_image)
+        urls = await ctx.gateway.generate_image(prompt, size=size, n=1, image=ref_image, model=model)
         if not urls:
             raise RuntimeError("gateway 未返回图片")
 

@@ -32,7 +32,9 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   // Tools group
   const toolLinks = [
     { to: '/omni-weaver', icon: Layers, label: 'OmniWeaver', badge: 'New' },
-    { to: '/agent-studio', icon: Bot, label: '智能体工作室', badge: 'New' },
+    // 暂时屏蔽「智能体工作台」入口（需要时恢复本行）
+    // { to: '/studio', icon: Bot, label: '智能体工作台', badge: 'New' },
+    { to: '/agent-studio', icon: Bot, label: '智能体工作室' },
   ]
 
   // Account group - preserved from original otherLinks

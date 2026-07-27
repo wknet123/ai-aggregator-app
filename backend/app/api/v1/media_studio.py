@@ -127,7 +127,7 @@ class EffectRequest(BaseModel):
 
 
 class ShortVideoRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=2000)
+    prompt: str = Field(..., min_length=1)  # 上限按模型在端点校验
     first_frame_id: Optional[str] = None           # 图生视频可选首帧
     duration: int = 6
     resolution: str = "768P"
@@ -135,7 +135,7 @@ class ShortVideoRequest(BaseModel):
 
 
 class Video2VideoRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=2000)
+    prompt: str = Field(..., min_length=1)  # 上限按模型在端点校验
     video_id: str                                    # 上传的源视频 file_id,或 /api/v1/static/xxx.mp4 样例路径
     strength: float = 0.7
     style_id: Optional[str] = None                   # 前端风格预设 id(仅记录)
@@ -161,7 +161,7 @@ class MotionRequest(BaseModel):
 
 
 class VideoEditRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=2000)
+    prompt: str = Field(..., min_length=1)  # 上限按模型在端点校验
     video_id: str
     edit_type: str = "basic"                       # basic | style | character
     ratio: str = "16:9"
@@ -411,9 +411,18 @@ async def _precheck_and_create(db: AsyncSession, current_user: User, feature: st
     """积分校验 + 建任务记录,返回 task_id。"""
     from app.services.credit_service import CreditService
     from app.models.generation_task import GenerationTask
+    from app.core.pricing import max_prompt_chars
 
     if not settings.AI_GATEWAY_API_KEY:
         raise HTTPException(status_code=500, detail="AI 网关未配置 (AI_GATEWAY_API_KEY)")
+
+    # 提示词长度按所选模型的真实上限校验（对齐上游）。
+    _limit = max_prompt_chars(model_id)
+    if prompt and len(prompt) > _limit:
+        raise HTTPException(
+            status_code=400,
+            detail=f"提示词过长：当前 {len(prompt)} 字，该模型最多 {_limit} 字，请精简后重试",
+        )
 
     credit_service = CreditService(db)
     if not await credit_service.check_sufficient_credits(current_user.tenant_id, cost):

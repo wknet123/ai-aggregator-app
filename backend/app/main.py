@@ -87,31 +87,114 @@ async def _ensure_schema_migrations(conn) -> None:
 
 
 async def _seed_default_agent() -> None:
-    """幂等播种内置 system default agent + 一个示例 system skill。已存在则跳过。"""
+    """幂等播种内置 system 智能体模板（default + 4 个场景模板）+ 一个示例 system skill。已存在则同步核心字段。"""
     from sqlalchemy import select
     from app.db.session import AsyncSessionLocal
     from app.models.agent import Agent, Skill
     from app.harness.agent_config import DEFAULT_AGENT
+
+    # 场景模板：与前端 TEMPLATE_GOALS 的 key 对齐，点选即用。
+    seed_agents = [
+        {
+            "agent_id": "default",
+            "name": "通用创作智能体",
+            "description": "内置默认智能体：根据目标自主生图/生视频",
+            "persona": DEFAULT_AGENT["persona"],
+            "skill_ids": [],
+            "allowed_plugins": DEFAULT_AGENT["allowed_plugins"],
+            "policy": DEFAULT_AGENT["policy"],
+            "input_schema": [],
+        },
+        {
+            "agent_id": "sys-ecom-shortvideo",
+            "name": "带货短视频操盘手",
+            "description": "按「痛点→展示→特写→场景→促单」产出竖屏带货短视频",
+            "persona": (
+                "你是电商带货短视频操盘手。按「痛点开场→产品展示→卖点特写→使用场景→促单收尾」"
+                "组织画面：先想清分镜节奏，需要关键帧时用 image_generate 生成、再用 "
+                "video_image_to_video 让其动起来，或直接 video_text_to_video 文生视频。"
+                "语言口语化、有代入感；忠于商品事实，不夸大功效、不使用违规词。"
+            ),
+            "skill_ids": ["sys-ecommerce-storyboard"],
+            "allowed_plugins": ["image.generate", "video.text_to_video", "video.image_to_video"],
+            "policy": {"max_steps": 8, "budget_limit": 700, "confirm_cost_threshold": 1, "confirm_mode": "step"},
+            "input_schema": [],
+        },
+        {
+            "agent_id": "sys-product-hero",
+            "name": "商品主图美术",
+            "description": "精修电商商品主图：突出质感细节、留标题空间",
+            "persona": (
+                "你是电商商品主图美术。用 image_generate 产出主图：纯色或场景化背景、"
+                "突出产品质感与细节、构图留出标题文案空间；把画面描述写得具体完整。"
+                "忠于商品外观，不臆造不存在的部件。"
+            ),
+            "skill_ids": [],
+            "allowed_plugins": ["image.generate"],
+            "policy": {"max_steps": 4, "budget_limit": 200, "confirm_cost_threshold": 1, "confirm_mode": "step"},
+            "input_schema": [],
+        },
+        {
+            "agent_id": "sys-image-to-video",
+            "name": "图生视频",
+            "description": "把一张商品静态图转成动态展示短视频",
+            "persona": (
+                "你是图生视频创作智能体。基于用户上传的商品图，用 video_image_to_video "
+                "把它转成动态展示：镜头运动克制、光影自然，风格高级。"
+                "把上传图产物的 key 作为 image_key 传入工具。"
+            ),
+            "skill_ids": [],
+            "allowed_plugins": ["image.generate", "video.image_to_video"],
+            "policy": {"max_steps": 5, "budget_limit": 400, "confirm_cost_threshold": 1, "confirm_mode": "step"},
+            "input_schema": [
+                {"key": "source_image", "type": "image", "required": True, "label": "商品图"},
+            ],
+        },
+        {
+            "agent_id": "sys-storyboard-script",
+            "name": "分镜脚本撰稿",
+            "description": "输出每镜画面/时长/口播的带货分镜脚本（纯文本）",
+            "persona": (
+                "你是资深带货短视频分镜脚本撰稿，兼顾商业转化与镜头语言。根据商品与目标，输出结构化分镜脚本：\n"
+                "- 开篇给出整体创意概述（钩子、节奏、情绪基调、目标人群）；\n"
+                "- 逐镜给出：镜号、画面描述（构图/景别/运镜/光影）、时长、口播文案、字幕/音效提示；\n"
+                "- 若目标中引用了具体角色（如「参考角色 ——」），务必在相关镜头中保持该角色的形象特征与着装一致；\n"
+                "- 结尾给出总时长核算与一句话拍摄建议。\n"
+                "语言专业、可执行、忠于商品事实；仅输出文字脚本，无需调用生成工具。"
+            ),
+            "skill_ids": [],
+            "allowed_plugins": [],
+            "policy": {"max_steps": 3, "budget_limit": 50, "confirm_cost_threshold": 1, "confirm_mode": "auto"},
+            "input_schema": [],
+        },
+    ]
+
     try:
         async with AsyncSessionLocal() as db:
-            exists = (await db.execute(
-                select(Agent).where(Agent.agent_id == "default")
-            )).scalar_one_or_none()
-            if exists is None:
-                db.add(Agent(
-                    agent_id="default", tenant_id=None, user_id=None,
-                    name="通用创作智能体", description="内置默认智能体：根据目标自主生图/生视频",
-                    persona=DEFAULT_AGENT["persona"],
-                    skill_ids=[], allowed_plugins=DEFAULT_AGENT["allowed_plugins"],
-                    policy=DEFAULT_AGENT["policy"], scope="system", is_active=1,
-                ))
-                print("🌱 seeded system agent: default")
-            else:
-                # 幂等同步：让 DEFAULT_AGENT 常量的能力/预算/人设变更随重启传播到库
-                exists.persona = DEFAULT_AGENT["persona"]
-                exists.allowed_plugins = DEFAULT_AGENT["allowed_plugins"]
-                exists.policy = DEFAULT_AGENT["policy"]
-                print("🔄 synced system agent: default")
+            for spec in seed_agents:
+                row = (await db.execute(
+                    select(Agent).where(Agent.agent_id == spec["agent_id"])
+                )).scalar_one_or_none()
+                if row is None:
+                    db.add(Agent(
+                        agent_id=spec["agent_id"], tenant_id=None, user_id=None,
+                        name=spec["name"], description=spec["description"],
+                        persona=spec["persona"], skill_ids=spec["skill_ids"],
+                        allowed_plugins=spec["allowed_plugins"], policy=spec["policy"],
+                        input_schema=spec["input_schema"], scope="system", is_active=1,
+                    ))
+                    print(f"🌱 seeded system agent: {spec['agent_id']}")
+                else:
+                    # 幂等同步：让模板定义的变更随重启传播到库（名称/简介/人设/能力/预算/输入）
+                    row.name = spec["name"]
+                    row.description = spec["description"]
+                    row.persona = spec["persona"]
+                    row.skill_ids = spec["skill_ids"]
+                    row.allowed_plugins = spec["allowed_plugins"]
+                    row.policy = spec["policy"]
+                    row.input_schema = spec["input_schema"]
+                    print(f"🔄 synced system agent: {spec['agent_id']}")
+
             skill_exists = (await db.execute(
                 select(Skill).where(Skill.skill_id == "sys-ecommerce-storyboard")
             )).scalar_one_or_none()

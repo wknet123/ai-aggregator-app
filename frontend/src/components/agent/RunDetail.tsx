@@ -30,9 +30,11 @@ const STATUS_LABEL: Record<string, string> = {
 interface Props {
   runId: string
   onChanged?: () => void          // 状态变化时通知父组件刷新历史列表
+  hideGoal?: boolean              // 内嵌工作台时隐藏 goal 行（GoalBar 已展示，避免重复）
+  onStatusChange?: (status: RunStatus) => void  // 回传当前 Run 状态（供工作台锁定设计器交互）
 }
 
-export default function RunDetail({ runId, onChanged }: Props) {
+export default function RunDetail({ runId, onChanged, hideGoal, onStatusChange }: Props) {
   const [run, setRun] = useState<AgentRun | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -44,6 +46,7 @@ export default function RunDetail({ runId, onChanged }: Props) {
     try {
       const r = await agentService.getRun(runId)
       setRun(r)
+      onStatusChange?.(r.status)
       if (r.status !== lastStatus.current) {
         lastStatus.current = r.status
         onChanged?.()
@@ -116,7 +119,7 @@ export default function RunDetail({ runId, onChanged }: Props) {
             <span className="text-xs text-gray-500">花费 {run.total_cost ?? 0}</span>
             <span className="text-xs text-gray-500">确认模式 {run.confirm_mode || 'auto'}</span>
           </div>
-          <p className="mt-1.5 text-sm text-gray-200 break-words">{run.goal}</p>
+          <p className="mt-1.5 text-sm text-gray-200 break-words">{hideGoal ? null : run.goal}</p>
           <p className="text-[11px] text-gray-600 mt-0.5">智能体 {run.agent_key} · {run.run_id}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

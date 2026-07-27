@@ -10,6 +10,7 @@
  * 已去除场景描述/动作描述/角色资产库。项目支持归档。
  */
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Film, ArrowLeft, Save, Loader2, Check, Plus, FileText, Clapperboard,
   ListVideo, Trash2, Download, RotateCcw, Scissors, AlertCircle,
@@ -193,6 +194,8 @@ function migrateEpisode(ep: DramaEpisode): DramaEpisode {
 
 export default function OmniWeaverPage() {
   useDocumentTitle('OmniWeaver · AI短剧')
+  const location = useLocation()
+  const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // ── 顶层视图 ──
@@ -266,6 +269,20 @@ export default function OmniWeaverPage() {
     setLastSaved(null); setSaveError('')
     setView('editor')
   }
+
+  // 从智能体工作台"投喂 OmniWeaver"跳转而来：携带 openProjectId → 自动打开该项目。
+  const autoOpenedRef = useRef(false)
+  useEffect(() => {
+    const pid = (location.state as any)?.openProjectId
+    if (!pid || autoOpenedRef.current) return
+    autoOpenedRef.current = true
+    // 消费掉 state，避免刷新/返回时重复打开。
+    navigate(location.pathname, { replace: true, state: null })
+    dramaService.getProject(pid)
+      .then((proj) => openProject(proj))
+      .catch(() => { /* 打开失败则停留在列表页 */ })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state])
 
   function defaultEpisode(n: number): DramaEpisode {
     return { episode: n, title: '', script_text: '', shots: [] }

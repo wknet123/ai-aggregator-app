@@ -16,7 +16,7 @@ class FileUploadResponse(BaseModel):
 
 class GenerationTaskCreate(BaseModel):
     """Generation task creation"""
-    prompt: str = Field(..., min_length=1, max_length=2000)
+    prompt: str = Field(..., min_length=1)  # 上限按所选模型在端点校验（见 core.pricing.max_prompt_chars）
     model_id: str
     aspect_ratio: Optional[str] = "4:3"
     resolution: Optional[str] = "720p"  # For video generation: 720p or 1080p
