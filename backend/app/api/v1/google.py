@@ -17,6 +17,7 @@ from app.services.google_service import GoogleService
 from app.services.storage import get_storage_service, StorageService
 from app.core.credits import InsufficientCreditsError
 from app.core.pricing import max_prompt_chars
+from app.core.asset_url import public_asset_url
 from app.config import Settings
 from app.utils.helpers import get_user_upload_path, get_user_output_path
 from pathlib import Path
@@ -322,45 +323,83 @@ async def generate_video(
     upload_path = get_user_upload_path(settings.STORAGE_BASE_PATH, current_user.id)
 
     async def find_frame_path(frame_id: str):
+        """Resolve a frame_id to (local_path, minio_key). Either may be None.
+
+        Guarantees a local file (materialising from MinIO if needed) and, when MinIO
+        is enabled, that the object exists in MinIO under its upload key (mirroring a
+        local-only file up), so a gateway-reachable public URL can be built later.
+        """
         if not frame_id:
-            return None
-        # 1. Local disk
-        for ext in ['.jpg', '.jpeg', '.png', '.webp']:
-            potential_path = upload_path / f"{frame_id}{ext}"
-            if potential_path.exists():
-                return potential_path
-        # 2. MinIO fallback → write back to local disk for downstream generation
+            return None, None
+        storage = None
         if settings.MINIO_ENABLED:
             try:
                 storage = get_storage_service()
             except Exception:
                 storage = None
-            if storage is not None:
-                for ext in ['.jpg', '.jpeg', '.png', '.webp']:
+        # 1. Local disk → ensure mirrored to MinIO
+        for ext in ['.jpg', '.jpeg', '.png', '.webp']:
+            potential_path = upload_path / f"{frame_id}{ext}"
+            if potential_path.exists():
+                key = None
+                if storage is not None:
                     key = storage.user_upload_key(current_user.id, f"{frame_id}{ext}")
                     try:
-                        data, _ = await storage.get_object_bytes(key)
+                        await storage.get_object_bytes(key)  # exists?
                     except Exception:
-                        continue
-                    upload_path.mkdir(parents=True, exist_ok=True)
-                    local_path = upload_path / f"{frame_id}{ext}"
-                    async with aiofiles.open(local_path, 'wb') as f:
-                        await f.write(data)
-                    return local_path
-        return None
+                        try:
+                            import mimetypes as _mt
+                            ct = _mt.guess_type(str(potential_path))[0] or "image/jpeg"
+                            await storage.upload_file(potential_path, key, ct)
+                        except Exception as _e:
+                            logger.warning("frame %s MinIO mirror failed: %s", frame_id, _e)
+                            key = None
+                return potential_path, key
+        # 2. MinIO fallback → write back to local disk for downstream generation
+        if storage is not None:
+            for ext in ['.jpg', '.jpeg', '.png', '.webp']:
+                key = storage.user_upload_key(current_user.id, f"{frame_id}{ext}")
+                try:
+                    data, _ = await storage.get_object_bytes(key)
+                except Exception:
+                    continue
+                upload_path.mkdir(parents=True, exist_ok=True)
+                local_path = upload_path / f"{frame_id}{ext}"
+                async with aiofiles.open(local_path, 'wb') as f:
+                    await f.write(data)
+                return local_path, key
+        return None, None
 
-    # For image-to-video, find frame paths
+    # For image-to-video, find frame paths + gateway-reachable public URLs.
     first_frame_path = None
     second_frame_path = None
     third_frame_path = None
+    reference_image_urls: list[str] = []
 
     if generation_mode == 'image-to-video':
-        first_frame_path = await find_frame_path(task.first_frame_id)
-        second_frame_path = await find_frame_path(task.second_frame_id) if task.second_frame_id else None
-        third_frame_path = await find_frame_path(task.third_frame_id) if task.third_frame_id else None
+        first_frame_path, first_key = await find_frame_path(task.first_frame_id)
+        second_frame_path, second_key = await find_frame_path(task.second_frame_id) if task.second_frame_id else (None, None)
+        third_frame_path, third_key = await find_frame_path(task.third_frame_id) if task.third_frame_id else (None, None)
 
         if not first_frame_path:
             raise HTTPException(status_code=404, detail="First frame image not found")
+
+        # HappyHorse takes reference frames as a comma-joined `input_reference` list of
+        # fetchable URLs (a base64 data URL contains commas → would corrupt the list),
+        # so build signed public URLs (order-significant: [Image 1]/[Image 2]/[Image 3]).
+        is_happyhorse = "happyhorse" in gateway_video_model.lower()
+        if is_happyhorse:
+            for key in (first_key, second_key, third_key):
+                if not key:
+                    continue
+                url = public_asset_url(key)
+                if url:
+                    reference_image_urls.append(url)
+            if not reference_image_urls:
+                raise HTTPException(
+                    status_code=500,
+                    detail="HappyHorse 图生视频需要可公网访问的参考图 URL，请配置 PUBLIC_BASE_URL 与 MinIO",
+                )
     
     # Create task ID
     task_id = str(uuid.uuid4())
@@ -413,7 +452,8 @@ async def generate_video(
         resolution=task.resolution or "720p",
         duration=duration,
         model_id=gateway_video_model,
-        generation_mode=generation_mode
+        generation_mode=generation_mode,
+        reference_image_urls=reference_image_urls or None,
     )
     
     return ResponseBase(
@@ -1080,6 +1120,7 @@ async def process_video_generation_with_credits(
     reference_video_urls: list = None,
     episode_num: int = None,
     as_episode_composite: bool = False,
+    reference_image_urls: list = None,
 ):
     """Background task for video generation with credit management.
 
@@ -1143,6 +1184,7 @@ async def process_video_generation_with_credits(
                 model=model_id,
                 generation_mode=generation_mode,
                 reference_image_paths=merged_reference_paths or None,
+                reference_image_urls=reference_image_urls,
                 last_frame_path=last_frame_path,
                 reference_video_url=reference_video_url,
                 reference_video_urls=reference_video_urls,

@@ -41,6 +41,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.asset_url import public_asset_url, sign_asset
 from app.db.session import get_db
 from app.dependencies import get_current_user
 from app.integrations.gateway.client import GatewayError, get_gateway_client, get_gateway_client_for_user
@@ -194,8 +195,7 @@ async def _read_upload_bytes(user_id: int, file_id: str) -> Optional[bytes]:
 
 def _sign_asset(object_key: str, exp: int) -> str:
     """HMAC-SHA256 over the object key + expiry, keyed by the app secret."""
-    msg = f"{object_key}:{exp}".encode("utf-8")
-    return hmac.new(settings.SECRET_KEY.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+    return sign_asset(object_key, exp)
 
 
 def _public_asset_url(object_key: str, ttl_seconds: int = 6 * 3600) -> Optional[str]:
@@ -205,12 +205,7 @@ def _public_asset_url(object_key: str, ttl_seconds: int = 6 * 3600) -> Optional[
     (host 是内网名)。改为走公网后端 origin → nginx → 后端 → MinIO 流式(同短剧 ref-asset),
     不暴露 MinIO、不依赖 presign host。需要 PUBLIC_BASE_URL 配置。
     """
-    base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
-    if not base:
-        return None
-    exp = int(time.time()) + ttl_seconds
-    sig = _sign_asset(object_key, exp)
-    return f"{base}/api/v1/studio/asset?key={quote(object_key, safe='')}&exp={exp}&sig={sig}"
+    return public_asset_url(object_key, ttl_seconds)
 
 
 async def _public_video_url(user_id: int, file_id: str) -> Optional[str]:

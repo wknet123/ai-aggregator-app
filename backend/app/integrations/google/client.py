@@ -93,6 +93,7 @@ class GoogleAIClient:
         progress_callback: Optional[Callable[[int], None]] = None,
         generation_mode: str = "text-to-video",
         reference_image_paths: Optional[list] = None,
+        reference_image_urls: Optional[list] = None,
         last_frame_path: Optional[str] = None,
         reference_video_url: Optional[str] = None,
         reference_video_urls: Optional[list] = None,
@@ -155,18 +156,32 @@ class GoogleAIClient:
                 poll = gw.seedance_poll
             elif "happyhorse" in family:
                 res = "1080p" if str(resolution).startswith("1080") else "720p"
-                # HappyHorse i2v accepts multiple reference frames via input_reference
-                # (order-significant). First frame leads; extra frames follow.
-                images = [first_frame_bytes] if first_frame_bytes else []
-                images.extend(extra_image_bytes)
-                task_id = await gw.happyhorse_create(
-                    prompt,
-                    mode="i2v" if (is_i2v or images) else "t2v",
-                    resolution=res,
-                    duration=duration,
-                    ratio=aspect_ratio,
-                    images=images or None,
-                )
+                # HappyHorse /videos delivers reference frames as a comma-joined
+                # `input_reference` list of FETCHABLE URLs (a base64 data URL contains
+                # commas → would corrupt the list). Prefer the public URLs the caller
+                # built; only fall back to a single inlined byte-frame when no URL is
+                # available (single-image i2v). Mode by count: 1 → i2v, ≥2 → r2v.
+                ref_urls = [u for u in (reference_image_urls or []) if u]
+                if ref_urls:
+                    hh_mode = "r2v" if len(ref_urls) >= 2 else "i2v"
+                    task_id = await gw.happyhorse_create(
+                        prompt,
+                        mode=hh_mode,
+                        resolution=res,
+                        duration=duration,
+                        ratio=aspect_ratio,
+                        image_urls=ref_urls,
+                    )
+                else:
+                    images = [first_frame_bytes] if first_frame_bytes else None
+                    task_id = await gw.happyhorse_create(
+                        prompt,
+                        mode="i2v" if is_i2v else "t2v",
+                        resolution=res,
+                        duration=duration,
+                        ratio=aspect_ratio,
+                        images=images,
+                    )
                 poll = gw.video_poll
             else:  # Hailuo (海螺) default
                 res = "1080P" if str(resolution).startswith("1080") else "768P"

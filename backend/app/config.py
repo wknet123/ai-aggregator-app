@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     # 动作模仿 Kling 档:走 /api/kling/v1/videos/* 端点(需 token 开通 kling 分组)
     GATEWAY_KLING_MOTION_MODEL: str = "kling-v3"       # Kling 动作控制 (motion-control; doc model_name 枚举值 = kling-v3)
     GATEWAY_KLING_OMNI_MODEL: str = "kling-v3-omni"    # Kling Omni (omni-video 端点)
-    GATEWAY_VIDEO_EDIT_MODEL: str = "happyhorse-1.0-video-edit-720p"  # 视频编辑 (HappyHorse edit)
+    GATEWAY_VIDEO_EDIT_MODEL: str = "happyhorse-1.0-edit-720p"  # 视频编辑 (HappyHorse edit;文档 id: happyhorse-1.0-edit-{res})
     GATEWAY_EFFECT_VIDEO_MODEL: str = "happyhorse-1.0-i2v-720p"     # AI特效 (视频类:挤压/融化/亲吻等)
 
     # Credit System

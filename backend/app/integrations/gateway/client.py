@@ -123,7 +123,7 @@ class GatewayClient:
 
     async def _post_task(
         self, url: str, payload: Dict[str, Any], what: str,
-        *, timeout: float = 60.0, retries: int = 2,
+        *, timeout: float = 60.0, retries: int = 2, multipart: bool = False,
     ) -> Dict[str, Any]:
         """POST a task-create request, retrying transient gateway dispatch failures.
 
@@ -132,11 +132,24 @@ class GatewayClient:
         not a bad payload, so retrying with backoff usually succeeds. 429/5xx are
         likewise retried. A genuine bad-parameter 400 (e.g. InvalidParameter /
         MissingParameter) is surfaced immediately with the upstream body.
+
+        ``multipart=True`` sends ``payload`` as ``multipart/form-data`` (each key a
+        form field) instead of JSON — required by HappyHorse ``/videos`` per the doc
+        (``--form 'model=…' --form 'input_reference=a.jpg,b.jpg'``). httpx sets the
+        multipart boundary itself, so the JSON Content-Type header is dropped.
         """
         delays = [3, 8, 15][: max(0, retries)]
+        # For multipart, send every field as a (filename=None) form part so httpx
+        # emits `multipart/form-data`; use an auth-only header set (no JSON CT).
+        if multipart:
+            files = {k: (None, "" if v is None else str(v)) for k, v in payload.items()}
+            headers = {"Authorization": f"Bearer {self.api_key}"}
         async with httpx.AsyncClient(timeout=timeout) as client:
             for attempt, delay in enumerate(delays + [None], start=1):
-                resp = await client.post(url, headers=self._headers, json=payload)
+                if multipart:
+                    resp = await client.post(url, headers=headers, files=files)
+                else:
+                    resp = await client.post(url, headers=self._headers, json=payload)
                 if resp.is_success:
                     return resp.json()
                 body = resp.text[:500]
@@ -375,12 +388,22 @@ class GatewayClient:
         duration: Union[int, str] = 4,
         ratio: str = "16:9",
         images: Optional[List[bytes]] = None,
+        image_urls: Optional[List[str]] = None,
         timeout: float = 60.0,
     ) -> str:
         """Create a HappyHorse video task → task_id.
 
-        The gateway expects JSON with an integer ``duration``. Reference frames
-        (i2v / r2v) are delivered as base64 data URLs via ``input_reference``.
+        Per the doc (https://neolink.com/docs/instruction-manual/video/02-happyhorse)
+        ``POST /v1/videos`` is **multipart/form-data**, and reference frames (i2v / r2v)
+        go in a single ``input_reference`` field as a **comma-separated** list, e.g.
+        ``input_reference=a.jpg,b.jpg`` — image order maps to ``[Image 1]``/``[Image 2]``
+        in the prompt.
+
+        Because the delimiter is a comma, multi-image references MUST be passed as
+        ``image_urls`` (public/fetchable URLs): a base64 data URL itself contains
+        commas and would corrupt the list. ``images`` (raw bytes → base64 data URL)
+        is only safe for a **single** reference; passing >1 bytes falls back to
+        data URLs but the gateway may not split them — prefer ``image_urls``.
         """
         self._require_key()
         model = f"{settings.GATEWAY_VIDEO_HAPPYHORSE}-{mode}-{resolution}"
@@ -390,11 +413,19 @@ class GatewayClient:
             "duration": int(duration),
             "ratio": ratio,
         }
+        # Prefer comma-safe URLs; fall back to base64 data URLs for raw bytes.
+        refs: List[str] = []
+        if image_urls:
+            refs.extend(u for u in image_urls if u)
         if images:
-            refs = [_as_data_url(img, "image/png") for img in images]
-            payload["input_reference"] = refs if len(refs) > 1 else refs[0]
+            refs.extend(_as_data_url(img, "image/png") for img in images if img)
+        if refs:
+            if len(refs) > 1:
+                logger.info("happyhorse i2v: %d reference images", len(refs))
+            payload["input_reference"] = ",".join(refs)
         data = await self._post_task(
-            f"{self.base_url}/videos", payload, "happyhorse video", timeout=timeout
+            f"{self.base_url}/videos", payload, "happyhorse video",
+            timeout=timeout, multipart=True,
         )
         task_id = data.get("id") or data.get("task_id")
         if not task_id:
@@ -806,7 +837,7 @@ class GatewayClient:
 
         按 HappyHorse 文档(https://neolink.com/docs/instruction-manual/video/02-happyhorse):
         走 ``POST /v1/videos``,``input_reference`` = 输入视频,``prompt`` = 编辑指令,
-        ``model`` = ``happyhorse-1.0-video-edit-{res}``。轮询用 :meth:`video_poll`。
+        ``model`` = ``happyhorse-1.0-edit-{res}``。轮询用 :meth:`video_poll`。
         优先用公网视频 URL(input_reference 接 URL 字符串);无 URL 时回退 base64 内联。
         """
         self._require_key()
@@ -825,7 +856,8 @@ class GatewayClient:
             "input_reference": input_ref,
         }
         data = await self._post_task(
-            f"{self.base_url}/videos", payload, "video_edit", timeout=timeout
+            f"{self.base_url}/videos", payload, "video_edit", timeout=timeout,
+            multipart=True,
         )
         task_id = data.get("id") or data.get("task_id")
         if not task_id:
