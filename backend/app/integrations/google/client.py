@@ -155,14 +155,17 @@ class GoogleAIClient:
                 poll = gw.seedance_poll
             elif "happyhorse" in family:
                 res = "1080p" if str(resolution).startswith("1080") else "720p"
-                images = [first_frame_bytes] if first_frame_bytes else None
+                # HappyHorse i2v accepts multiple reference frames via input_reference
+                # (order-significant). First frame leads; extra frames follow.
+                images = [first_frame_bytes] if first_frame_bytes else []
+                images.extend(extra_image_bytes)
                 task_id = await gw.happyhorse_create(
                     prompt,
-                    mode="i2v" if is_i2v else "t2v",
+                    mode="i2v" if (is_i2v or images) else "t2v",
                     resolution=res,
                     duration=duration,
                     ratio=aspect_ratio,
-                    images=images,
+                    images=images or None,
                 )
                 poll = gw.video_poll
             else:  # Hailuo (海螺) default

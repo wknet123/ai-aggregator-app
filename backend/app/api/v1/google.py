@@ -314,16 +314,39 @@ async def generate_video(
     except InsufficientCreditsError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-    # Helper to find frame paths
+    # Helper to find frame paths. Uploads are stored on local disk AND mirrored to
+    # MinIO (see /upload-frame). The local copy may be absent (separate container/host,
+    # a rebuild, or an upload that only reached MinIO), so fall back to MinIO and
+    # materialise the object to a local file — the same order the serving endpoint
+    # (get_uploaded_frame) and the drama pipeline (_fetch_shot_image_to_local) use.
     upload_path = get_user_upload_path(settings.STORAGE_BASE_PATH, current_user.id)
 
-    def find_frame_path(frame_id: str):
+    async def find_frame_path(frame_id: str):
         if not frame_id:
             return None
+        # 1. Local disk
         for ext in ['.jpg', '.jpeg', '.png', '.webp']:
             potential_path = upload_path / f"{frame_id}{ext}"
             if potential_path.exists():
                 return potential_path
+        # 2. MinIO fallback → write back to local disk for downstream generation
+        if settings.MINIO_ENABLED:
+            try:
+                storage = get_storage_service()
+            except Exception:
+                storage = None
+            if storage is not None:
+                for ext in ['.jpg', '.jpeg', '.png', '.webp']:
+                    key = storage.user_upload_key(current_user.id, f"{frame_id}{ext}")
+                    try:
+                        data, _ = await storage.get_object_bytes(key)
+                    except Exception:
+                        continue
+                    upload_path.mkdir(parents=True, exist_ok=True)
+                    local_path = upload_path / f"{frame_id}{ext}"
+                    async with aiofiles.open(local_path, 'wb') as f:
+                        await f.write(data)
+                    return local_path
         return None
 
     # For image-to-video, find frame paths
@@ -332,9 +355,9 @@ async def generate_video(
     third_frame_path = None
 
     if generation_mode == 'image-to-video':
-        first_frame_path = find_frame_path(task.first_frame_id)
-        second_frame_path = find_frame_path(task.second_frame_id) if task.second_frame_id else None
-        third_frame_path = find_frame_path(task.third_frame_id) if task.third_frame_id else None
+        first_frame_path = await find_frame_path(task.first_frame_id)
+        second_frame_path = await find_frame_path(task.second_frame_id) if task.second_frame_id else None
+        third_frame_path = await find_frame_path(task.third_frame_id) if task.third_frame_id else None
 
         if not first_frame_path:
             raise HTTPException(status_code=404, detail="First frame image not found")
@@ -1103,7 +1126,11 @@ async def process_video_generation_with_credits(
                 await db.commit()
 
             # Generate video with credit deduction
-            # For text-to-video, first_frame_path will be None
+            # For text-to-video, first_frame_path will be None.
+            # 2nd/3rd frames (HappyHorse i2v multi-reference) ride along as extra
+            # reference images, appended after any caller-supplied reference paths.
+            extra_frame_paths = [p for p in (second_frame_path, third_frame_path) if p]
+            merged_reference_paths = (list(reference_image_paths) if reference_image_paths else []) + extra_frame_paths
             result = await google_service.generate_video(
                 tenant_id=tenant_id,
                 prompt=prompt,
@@ -1115,7 +1142,7 @@ async def process_video_generation_with_credits(
                 duration=duration,
                 model=model_id,
                 generation_mode=generation_mode,
-                reference_image_paths=reference_image_paths,
+                reference_image_paths=merged_reference_paths or None,
                 last_frame_path=last_frame_path,
                 reference_video_url=reference_video_url,
                 reference_video_urls=reference_video_urls,
