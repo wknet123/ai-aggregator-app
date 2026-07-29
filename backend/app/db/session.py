@@ -6,10 +6,12 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from app.config import settings
 
 
-# Create async engine
+# Create async engine.
+# echo is driven by SQL_ECHO (default False): SQLAlchemy's echo handler otherwise
+# floods stdout with every statement + parameter set, drowning the app's own logs.
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=True,
+    echo=settings.SQL_ECHO,
     future=True,
     pool_pre_ping=True,
     pool_size=10,

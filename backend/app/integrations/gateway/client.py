@@ -74,6 +74,47 @@ def _as_data_url(image: Union[str, bytes], mime: str = "image/png") -> str:
     return f"data:{mime};base64,{image}"
 
 
+# Keys whose values are large binary blobs (base64 data URLs). Logging them raw
+# would dump megabytes per line, so they're summarised to a short descriptor.
+_BULKY_KEYS = {"input_reference", "image", "images", "input", "content", "messages"}
+
+
+def _summarise_ref(value: Any) -> Any:
+    """Collapse a reference value to a loggable descriptor.
+
+    Data URLs are replaced by ``<data-url image/png, 12345B>`` and http(s) URLs
+    are kept verbatim (they're the diagnostic signal for HappyHorse's comma-joined
+    ``input_reference``). Comma-joined lists are split and each item summarised.
+    """
+    if isinstance(value, str):
+        if value.startswith("data:"):
+            return f"<data-url {len(value)}B>"
+        if "," in value and ("data:" in value or "http" in value):
+            return [_summarise_ref(p) for p in value.split(",")]
+        return value
+    if isinstance(value, list):
+        return [_summarise_ref(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _summarise_ref(v) for k, v in value.items()}
+    return value
+
+
+def _loggable_payload(payload: Dict[str, Any], *, cap: int = 1200) -> str:
+    """Render a request body for logging: bulky media summarised, length-capped.
+
+    Never raises — logging must not break a request. Secrets aren't present in
+    payloads (the API key lives in headers), so only size is a concern.
+    """
+    try:
+        safe: Dict[str, Any] = {}
+        for k, v in payload.items():
+            safe[k] = _summarise_ref(v) if k in _BULKY_KEYS else v
+        text = json.dumps(safe, ensure_ascii=False, default=str)
+    except Exception:  # pragma: no cover - defensive
+        return repr(payload)[:cap]
+    return text if len(text) <= cap else text[:cap] + f"…(+{len(text) - cap} chars)"
+
+
 class GatewayError(Exception):
     """Raised when the aggregation gateway returns an error."""
 
@@ -138,6 +179,8 @@ class GatewayClient:
         fields) is rejected with ``cannot unmarshal string ... of type int``.
         """
         delays = [3, 8, 15][: max(0, retries)]
+        if settings.LOG_MODEL_REQUESTS:
+            logger.info("%s → POST %s body=%s", what, url, _loggable_payload(payload))
         async with httpx.AsyncClient(timeout=timeout) as client:
             for attempt, delay in enumerate(delays + [None], start=1):
                 resp = await client.post(url, headers=self._headers, json=payload)
@@ -160,7 +203,12 @@ class GatewayClient:
                 # Non-transient failure (bad params, moderation/privacy block, etc.):
                 # surface the upstream's own message so the user sees exactly why it was
                 # rejected (e.g. real-face/real-name privacy interception) and can fix it.
-                logger.warning("%s gateway error %s: %s", what, resp.status_code, body[:300])
+                # Re-log the request body alongside the rejection so the offending
+                # parameter is visible in one place (e.g. HappyHorse "Invalid Parameter").
+                logger.warning(
+                    "%s gateway error %s: %s | request body=%s",
+                    what, resp.status_code, body[:300], _loggable_payload(payload),
+                )
                 raise GatewayError(_extract_error_message(body) or f"{what} failed: {resp.status_code}")
         raise GatewayError(f"{what} failed: exhausted retries")
 
@@ -256,6 +304,12 @@ class GatewayClient:
             }
         else:
             payload = {"model": model, "prompt": prompt, "n": n, "size": size, "watermark": watermark}
+
+        if settings.LOG_MODEL_REQUESTS:
+            logger.info(
+                "image generation → POST %s/images/generations body=%s",
+                self.base_url, _loggable_payload(payload),
+            )
 
         # Output moderation (the upstream model flags the *generated* image as
         # "inappropriate content") is non-deterministic — re-rolling the same prompt
@@ -412,6 +466,18 @@ class GatewayClient:
         if images:
             refs.extend(_as_data_url(img, "image/png") for img in images if img)
         if refs:
+            # ``input_reference`` is a COMMA-joined list. A base64 data URL contains a
+            # comma (``data:image/png;base64,<payload>``), so joining it splits into
+            # two bogus refs and the upstream rejects it with "Invalid Parameter".
+            # Only http(s) URLs are comma-safe — warn loudly if any ref is a data URL.
+            data_url_refs = [r for r in refs if r.startswith("data:")]
+            if data_url_refs:
+                logger.warning(
+                    "happyhorse %s: %d/%d reference(s) are base64 data URLs — these "
+                    "corrupt the comma-joined input_reference and cause 'Invalid "
+                    "Parameter'. Pass fetchable http(s) URLs via image_urls instead.",
+                    mode, len(data_url_refs), len(refs),
+                )
             if len(refs) > 1:
                 logger.info("happyhorse %s: %d reference images", mode, len(refs))
             payload["input_reference"] = ",".join(refs)

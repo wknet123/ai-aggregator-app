@@ -23,6 +23,8 @@ async def run_agent(ctx, run_id: str) -> str:
 
 async def startup(ctx) -> None:
     """worker 启动：扫描 status=running 的 Run（崩溃中断的），重新入队 → 从检查点续跑。"""
+    from app.utils.logger import configure_logging
+    configure_logging()
     logger.info("harness worker 启动，Redis=%s", settings.REDIS_URL)
     try:
         from sqlalchemy import select

@@ -785,14 +785,27 @@ async def _generate_shot_video(
         )
         poll = gw.video_poll
     elif "happyhorse" in family:
-        images = [reference_image] if reference_image else None
-        task = await gw.happyhorse_create(
-            prompt,
-            mode="i2v" if reference_image else "t2v",
-            duration=duration,
-            ratio=aspect_ratio,
-            images=images,
-        )
+        # HappyHorse input_reference 是逗号连接的 URL 列表：URL 参考图走 image_urls；
+        # base64 data URL(抽帧 bytes)含逗号会破坏该字段导致 InvalidParameter，
+        # 单张时才可作 images 回退,多张必须全为 URL。
+        ref_urls = [r for r in [reference_image] if isinstance(r, str)]
+        ref_bytes = [r for r in [reference_image] if isinstance(r, (bytes, bytearray))]
+        if ref_urls:
+            task = await gw.happyhorse_create(
+                prompt,
+                mode="i2v",
+                duration=duration,
+                ratio=aspect_ratio,
+                image_urls=ref_urls,
+            )
+        else:
+            task = await gw.happyhorse_create(
+                prompt,
+                mode="i2v" if ref_bytes else "t2v",
+                duration=duration,
+                ratio=aspect_ratio,
+                images=ref_bytes or None,
+            )
         poll = gw.video_poll
     else:  # Seedance (短剧) — default for the drama workbench
         task = await gw.seedance_create(

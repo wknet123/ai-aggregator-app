@@ -111,6 +111,13 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
+    # Emit every SQL statement executed by SQLAlchemy (very noisy; dev-only).
+    # When False (default) the engine stays quiet and app logs read cleanly.
+    SQL_ECHO: bool = False
+    # Log the outbound request body/form of each AI-gateway model call (prompt,
+    # model id, ratio/duration, reference-frame kinds). Helps diagnose upstream
+    # "Invalid Parameter" rejections. Bodies are size-capped and secrets stripped.
+    LOG_MODEL_REQUESTS: bool = True
 
     # Alipay Configuration (支付宝配置)
     ALIPAY_APPID: Optional[str] = None  # 支付宝应用ID

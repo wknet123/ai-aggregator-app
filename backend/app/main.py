@@ -252,6 +252,11 @@ async def _seed_default_gateway_config() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
+    # Install unified logging first, so every subsequent log line (including
+    # startup) uses the shared formatter rather than SQLAlchemy's raw echo dumps.
+    from app.utils.logger import configure_logging
+    configure_logging()
+
     # Startup
     print("🚀 Starting AI Aggregator Platform...")
     

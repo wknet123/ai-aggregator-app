@@ -507,11 +507,18 @@ async def create_effect(
             raise GatewayError("未找到上传的图片")
         if is_video:
             # 视频类特效:M1 用 HappyHorse 图生视频。双人特效(亲吻/拥抱)若有参考图走 r2v。
-            ref = await _read_upload_bytes(uid, ref_id) if ref_id else None
-            images = [img, ref] if ref is not None else [img]
-            mode = "r2v" if ref is not None else "i2v"
+            # HappyHorse 的 input_reference 是逗号连接的 URL 列表,base64 data URL 含逗号会
+            # 破坏该字段导致 "Invalid Parameter" —— 必须传网关可达的公网 URL。
+            image_url = await _resolve_image_public_url(uid, image_id)
+            ref_url = await _resolve_image_public_url(uid, ref_id) if ref_id else None
+            image_urls = [u for u in [image_url, ref_url] if u]
+            if not image_urls:
+                raise GatewayError(
+                    "图生视频需要网关可达的图片公网 URL；请确认 PUBLIC_BASE_URL 已配置"
+                )
+            mode = "r2v" if ref_url else "i2v"
             gw_task = await gw.happyhorse_create(
-                prompt, mode=mode, resolution="720p", duration=4, images=images,
+                prompt, mode=mode, resolution="720p", duration=4, image_urls=image_urls,
             )
             url = await _poll_video(gw.video_poll, gw_task)
             return await gw.fetch_bytes(url)
