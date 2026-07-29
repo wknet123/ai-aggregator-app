@@ -31,6 +31,48 @@ export interface GenerationTaskResponse {
   progress?: number
 }
 
+/**
+ * Parameters blob persisted alongside each generation task (server sends it back
+ * verbatim on /history). Carries everything the editor needs to refill a form —
+ * text params plus the client-side upload ids used to restore reference previews.
+ * All fields optional: older tasks predate the *_id capture and only have text params.
+ */
+export interface GenerationParameters {
+  aspect_ratio?: string
+  resolution?: string
+  duration?: number
+  generation_mode?: string  // text-to-image | image-to-image | text-to-video | image-to-video
+  reference_image_id?: string          // image-to-image reference
+  first_frame_id?: string              // image-to-video frames
+  second_frame_id?: string
+  third_frame_id?: string
+  [key: string]: any  // tolerate server-side resolved fields (reference_image_path, *_frame_path)
+}
+
+export interface HistoryItem {
+  task_id: string
+  prompt: string
+  model_id: string
+  task_type: string
+  result_url: string
+  parameters: GenerationParameters
+  is_favorite?: boolean
+  is_public?: boolean
+  created_at?: string
+}
+
+/**
+ * Build a directly-loadable <img src> URL for a previously-uploaded reference frame.
+ * The backend's GET /upload-frame/{id} accepts the JWT via ?token= so the browser can
+ * fetch it without a custom Authorization header. Returns '' if no id/token.
+ */
+export function buildUploadPreviewUrl(fileId?: string | null): string {
+  if (!fileId) return ''
+  const token = localStorage.getItem('access_token') || ''
+  const API_URL = import.meta.env.VITE_API_URL || ''
+  return `${API_URL}/api/v1/google/upload-frame/${fileId}?token=${encodeURIComponent(token)}`
+}
+
 export const googleService = {
   /**
    * Upload first frame image for video generation
@@ -132,12 +174,12 @@ export const googleService = {
   /**
    * Get user's generation history
    */
-  async getHistory(taskType?: 'image' | 'video', limit: number = 20): Promise<any[]> {
+  async getHistory(taskType?: 'image' | 'video', limit: number = 20): Promise<HistoryItem[]> {
     const params = new URLSearchParams()
     if (taskType) params.append('task_type', taskType)
     params.append('limit', limit.toString())
-    
-    const response = await apiClient.get<{ data: any[] }>(
+
+    const response = await apiClient.get<{ data: HistoryItem[] }>(
       `/api/v1/google/history?${params.toString()}`
     )
     return response.data.data

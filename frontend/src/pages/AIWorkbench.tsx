@@ -9,7 +9,7 @@ import { calculateCost } from '../config/models.config'
 import type { ModelCategory } from '../types/model.types'
 import { useCreditStore } from '../store/credit.store'
 import { modelService } from '../services/model.service'
-import { googleService } from '../services/google.service'
+import { googleService, buildUploadPreviewUrl, type HistoryItem } from '../services/google.service'
 import { useCreditUtils } from '../utils/credit.utils'
 import CreditErrorBanner, { isInsufficientCredit } from '../components/CreditErrorBanner'
 import { useDocumentTitle, PAGE_TITLES } from '../hooks/useDocumentTitle'
@@ -45,6 +45,40 @@ interface ChatMessage {
   task_id?: string
   model_id?: string
   parameters?: any
+  prompt?: string  // originating prompt, mirrored onto the assistant bubble so refill is self-contained
+}
+
+// Rebuild a chat thread from history items (newest-first from the API). Each item
+// becomes a user prompt bubble followed by a completed result bubble. Rendered oldest
+// → newest so the thread reads top-to-bottom like a live conversation. The assistant
+// bubble carries task_id/model_id/parameters/prompt — everything applyRefill needs.
+function buildChatFromHistory(items: HistoryItem[]): ChatMessage[] {
+  const ordered = [...items].reverse() // API is newest-first; show oldest at top
+  const messages: ChatMessage[] = []
+  for (const item of ordered) {
+    const isVideo = item.task_type === 'video'
+    const ts = item.created_at ? new Date(item.created_at) : new Date()
+    messages.push({
+      id: `${item.task_id}-u`,
+      type: 'user',
+      content: item.prompt,
+      timestamp: ts,
+    })
+    messages.push({
+      id: `${item.task_id}-a`,
+      type: 'assistant',
+      content: isVideo ? '视频生成成功！' : '图像生成成功！',
+      imageUrl: isVideo ? undefined : item.result_url,
+      videoUrl: isVideo ? item.result_url : undefined,
+      timestamp: ts,
+      status: 'completed',
+      task_id: item.task_id,
+      model_id: item.model_id,
+      parameters: item.parameters || {},
+      prompt: item.prompt,
+    })
+  }
+  return messages
 }
 
 export default function AIWorkbench() {
@@ -96,16 +130,23 @@ export default function AIWorkbench() {
   // New states for Google integration - support multiple frames
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
   const [uploadedFileId, setUploadedFileId] = useState<string | null>(null) // Legacy support
+  // History refill: seed the (uncontrolled) ImageUploader with restored reference frames.
+  // Bump `uploaderKey` to force a remount so it re-reads `initialImages`.
+  const [refillImages, setRefillImages] = useState<UploadedImage[]>([])
+  const [uploaderKey, setUploaderKey] = useState(0)
   
   // Update category when route changes
   useEffect(() => {
     const newCategory = getCategoryFromRoute()
     setSelectedCategory(newCategory)
-    setChatMessages([])
+    // chatMessages are rehydrated from history by the loadHistory effect below
+    // (keyed on selectedCategory); it clears then refills, so no reset here.
     setError('')
     // Clear uploaded images when switching categories
     setUploadedImages([])
     setUploadedFileId(null)
+    setRefillImages([])
+    setUploaderKey((k) => k + 1)
     // Reset sub-types when switching categories
     if (newCategory === 'video') {
       setVideoSubType('text-to-video')
@@ -161,11 +202,16 @@ export default function AIWorkbench() {
     }
   }, [chatMessages])
 
-  // Load generation history on mount and category change
+  // Load generation history on mount and category change.
+  // Besides feeding the "我的作品" carousel, we rebuild the persistent chat thread so
+  // past generations survive reloads / category switches (the chat state itself is
+  // in-memory only). Each history item → a user prompt bubble + a completed result bubble.
   useEffect(() => {
+    let cancelled = false
     const loadHistory = async () => {
       try {
         const historyData = await googleService.getHistory(selectedCategory as 'image' | 'video', 10)
+        if (cancelled) return
         const formattedHistory = historyData.map(item => ({
           prompt: item.prompt,
           result: { url: item.result_url },
@@ -175,12 +221,15 @@ export default function AIWorkbench() {
           parameters: item.parameters || {}
         }))
         setHistory(formattedHistory)
+        setChatMessages(buildChatFromHistory(historyData))
       } catch (err) {
         console.error('Failed to load history:', err)
+        if (!cancelled) setChatMessages([])
       }
     }
-    
+
     loadHistory()
+    return () => { cancelled = true }
   }, [selectedCategory])
 
   // Default to the first available model of the current category
@@ -284,17 +333,25 @@ export default function AIWorkbench() {
 
             if (finalImageTask.status === 'completed' && finalImageTask.result_url) {
               resultUrl = finalImageTask.result_url
+              // Mirror the backend-persisted parameters so refilling a fresh bubble
+              // behaves identically to refilling one rebuilt from /history after reload.
+              const refillParams = {
+                ...modelConfig,
+                generation_mode: imageSubType,
+                reference_image_id: imageSubType === 'image-to-image' ? (uploadedImages[0]?.fileId || null) : null,
+              }
               // Update assistant message with result
-              setChatMessages(prev => prev.map(msg => 
-                msg.id === assistantMessageId 
-                  ? { 
-                      ...msg, 
+              setChatMessages(prev => prev.map(msg =>
+                msg.id === assistantMessageId
+                  ? {
+                      ...msg,
                       content: '图像生成成功！',
                       imageUrl: resultUrl!,
                       status: 'completed',
                       task_id: finalImageTask.task_id,
                       model_id: selectedModelId,
-                      parameters: modelConfig
+                      parameters: refillParams,
+                      prompt: currentPrompt,
                     }
                   : msg
               ))
@@ -359,16 +416,25 @@ export default function AIWorkbench() {
 
             if (finalVideoTask.status === 'completed' && finalVideoTask.result_url) {
               resultUrl = finalVideoTask.result_url
-              setChatMessages(prev => prev.map(msg => 
-                msg.id === assistantMessageId 
-                  ? { 
-                      ...msg, 
+              // Mirror backend-persisted params so live-bubble refill == history refill.
+              const refillParams = {
+                ...modelConfig,
+                generation_mode: videoSubType,
+                first_frame_id: videoSubType === 'image-to-video' ? (uploadedImages[0]?.fileId || uploadedFileId || null) : null,
+                second_frame_id: videoSubType === 'image-to-video' ? (uploadedImages[1]?.fileId || null) : null,
+                third_frame_id: videoSubType === 'image-to-video' ? (uploadedImages[2]?.fileId || null) : null,
+              }
+              setChatMessages(prev => prev.map(msg =>
+                msg.id === assistantMessageId
+                  ? {
+                      ...msg,
                       content: '视频生成成功！',
                       videoUrl: resultUrl!,
                       status: 'completed',
                       task_id: finalVideoTask.task_id,
                       model_id: selectedModelId,
-                      parameters: modelConfig
+                      parameters: refillParams,
+                      prompt: currentPrompt,
                     }
                   : msg
               ))
@@ -429,13 +495,62 @@ export default function AIWorkbench() {
 
   const handleFileSelect = async (file: File) => {
     setError('')
-    
+
     try {
       const response = await googleService.uploadFirstFrame(file)
       setUploadedFileId(response.file_id)
     } catch (err: any) {
       setError(err.response?.data?.detail || '文件上传失败')
     }
+  }
+
+  // Refill the editor from a past generation (a completed assistant bubble). Restores
+  // prompt, model, config (aspect_ratio/resolution/duration), sub-type, and — when the
+  // history captured client-side upload ids — the reference/frame image previews.
+  // Older tasks without *_id refill text params only; the image slots stay empty.
+  const applyRefill = (params: any, promptText?: string, modelId?: string) => {
+    const p = params || {}
+    if (promptText) setPrompt(promptText)
+
+    // Model must belong to the current category (image editor won't hold a video model).
+    if (modelId) {
+      const inCategory = getModelsByCategory(selectedCategory).some((m) => m.id === modelId)
+      if (inCategory) setSelectedModelId(modelId)
+    }
+
+    // Restore model options; drop undefined keys so CompactConfigBar keeps its defaults.
+    const cfg: Record<string, any> = {}
+    if (p.aspect_ratio != null) cfg.aspect_ratio = p.aspect_ratio
+    if (p.resolution != null) cfg.resolution = p.resolution
+    if (p.duration != null) cfg.duration = p.duration
+    if (Object.keys(cfg).length) setModelConfig((prev) => ({ ...prev, ...cfg }))
+
+    // Sub-type from the saved generation_mode.
+    const mode = p.generation_mode
+    if (selectedCategory === 'image') {
+      setImageSubType(mode === 'image-to-image' ? 'image-to-image' : 'text-to-image')
+    } else {
+      setVideoSubType(mode === 'image-to-video' ? 'image-to-video' : 'text-to-video')
+    }
+
+    // Restore reference images from captured file ids → previewable UploadedImage slots.
+    const ids: string[] = selectedCategory === 'image'
+      ? [p.reference_image_id].filter(Boolean)
+      : [p.first_frame_id, p.second_frame_id, p.third_frame_id].filter(Boolean)
+    const restored: UploadedImage[] = ids.map((fileId) => ({
+      id: `refill-${fileId}`,
+      previewUrl: buildUploadPreviewUrl(fileId),
+      fileId,
+    }))
+    setRefillImages(restored)
+    setUploadedImages(restored)
+    setUploadedFileId(restored[0]?.fileId ?? null)
+    // Force the uncontrolled ImageUploader to remount and re-seed from initialImages.
+    setUploaderKey((k) => k + 1)
+
+    setError('')
+    // Scroll the editor into view (thread may have pushed it off-screen on mobile).
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleFileRemove = () => {
@@ -571,6 +686,8 @@ export default function AIWorkbench() {
                 {/* Image Uploader - Show for image-to-video and image-to-image modes */}
                 {(selectedCategory === 'video' && videoSubType === 'image-to-video') ? (
                   <ImageUploader
+                    key={`video-uploader-${uploaderKey}`}
+                    initialImages={refillImages}
                     onImagesChange={(images) => {
                       setUploadedImages(images)
                       // Also update legacy state for backwards compatibility
@@ -590,6 +707,8 @@ export default function AIWorkbench() {
                   />
                 ) : (selectedCategory === 'image' && imageSubType === 'image-to-image') ? (
                   <ImageUploader
+                    key={`image-uploader-${uploaderKey}`}
+                    initialImages={refillImages}
                     onImagesChange={(images) => {
                       setUploadedImages(images)
                       if (images.length > 0 && images[0].fileId) {
@@ -1060,9 +1179,20 @@ export default function AIWorkbench() {
                       
                       {/* Status indicators */}
                       {msg.status === 'completed' && msg.type === 'assistant' && (
-                        <div className="flex items-center mt-2 text-xs text-green-400">
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          已完成
+                        <div className="flex items-center justify-between mt-2">
+                          <div className="flex items-center text-xs text-green-400">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            已完成
+                          </div>
+                          {/* Refill: restore this generation's prompt/model/params/images into the editor */}
+                          <button
+                            onClick={() => applyRefill(msg.parameters, msg.prompt ?? msg.content, msg.model_id)}
+                            title="复用参数：把这次生成的提示词与设置回填到编辑区"
+                            className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-pink-300 transition-colors"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            复用参数
+                          </button>
                         </div>
                       )}
                       

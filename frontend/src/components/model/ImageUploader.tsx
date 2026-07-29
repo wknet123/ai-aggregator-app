@@ -3,7 +3,7 @@ import { Plus, X, ZoomIn, Image as ImageIcon } from 'lucide-react'
 
 interface UploadedImage {
   id: string
-  file: File
+  file?: File          // absent for refilled images (restored from a server fileId, no local File)
   previewUrl: string
   fileId?: string // Server-side file ID after upload
 }
@@ -14,6 +14,7 @@ interface ImageUploaderProps {
   disabled?: boolean
   maxImages?: number
   mode?: 'video' | 'image' // 'video' for video frames, 'image' for reference image
+  initialImages?: UploadedImage[] // seed slots (e.g. restored from history refill); read once at mount
 }
 
 export default function ImageUploader({
@@ -22,8 +23,16 @@ export default function ImageUploader({
   disabled = false,
   maxImages = 3,
   mode = 'video',
+  initialImages,
 }: ImageUploaderProps) {
-  const [images, setImages] = useState<(UploadedImage | null)[]>([null, null, null])
+  // Uncontrolled: internal slot state seeds once from initialImages at mount. Callers
+  // that need to re-seed (history refill) change the component `key` to force a remount.
+  const seedSlots = (): (UploadedImage | null)[] => {
+    const slots: (UploadedImage | null)[] = [null, null, null]
+    ;(initialImages || []).slice(0, 3).forEach((img, i) => { slots[i] = img })
+    return slots
+  }
+  const [images, setImages] = useState<(UploadedImage | null)[]>(seedSlots)
   const [uploading, setUploading] = useState<boolean[]>([false, false, false])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const fileInputRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)]

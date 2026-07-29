@@ -87,13 +87,13 @@ export default function Gallery() {
           googleService.getHistory('video', 50)
         ])
         // Merge and sort by date
-        const allItems = [...images, ...videos].sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        const allItems = [...images, ...videos].sort((a, b) =>
+          new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
         )
-        setItems(allItems)
+        setItems(allItems as GalleryItem[])
       } else {
         const data = await googleService.getHistory(activeTab, 50)
-        setItems(data)
+        setItems(data as GalleryItem[])
       }
     } catch (err) {
       console.error('Failed to load gallery:', err)

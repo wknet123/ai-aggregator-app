@@ -233,7 +233,11 @@ async def generate_image(
         prompt=task.prompt,
         parameters=json.dumps({
             "aspect_ratio": task.aspect_ratio,
-            "reference_image_path": reference_image_path
+            "reference_image_path": reference_image_path,
+            # 回填用客户端字段（保留原有已解析路径不变，仅追加）：
+            # 编辑窗口据此复原子类型与参考图（reference_image_id → upload-frame 预览）。
+            "generation_mode": task.generation_mode,
+            "reference_image_id": task.reference_image_id,
         }),
         status="pending",
         # 短剧分镜图(带 drama_project_id)是中间产物，不作为作品展示。
@@ -421,7 +425,12 @@ async def generate_video(
             "generation_mode": generation_mode,
             "first_frame_path": str(first_frame_path) if first_frame_path else None,
             "second_frame_path": str(second_frame_path) if second_frame_path else None,
-            "third_frame_path": str(third_frame_path) if third_frame_path else None
+            "third_frame_path": str(third_frame_path) if third_frame_path else None,
+            # 回填用客户端帧 id（保留原有已解析路径不变，仅追加）：
+            # 编辑窗口据此复原参考帧预览（*_frame_id → upload-frame）。
+            "first_frame_id": task.first_frame_id,
+            "second_frame_id": task.second_frame_id,
+            "third_frame_id": task.third_frame_id,
         }),
         status="pending",
         # 归属短剧项目(带 drama_project_id)的视频是逐镜中间产物，不作为作品展示；
