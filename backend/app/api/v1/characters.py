@@ -12,6 +12,7 @@ import hashlib
 import json
 import random
 import uuid
+import asyncio
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
@@ -25,6 +26,7 @@ from app.models.character import Character, CharacterImage
 from app.models.user import User
 from app.schemas.response import ResponseBase
 from app.services.storage import get_storage_service, StorageService
+from app.utils.image_compress import compress_image_bytes
 
 router = APIRouter()
 
@@ -113,6 +115,9 @@ async def create_character(
     avatar_key: Optional[str] = None
     for idx, (img, data) in enumerate(zip(images, image_bytes_list)):
         ext = img.filename.rsplit(".", 1)[-1] if img.filename and "." in img.filename else "png"
+        # Shrink oversized refs so the gateway can fetch them over the slow public origin.
+        data, norm_ext = await asyncio.to_thread(compress_image_bytes, data, f".{ext}")
+        ext = norm_ext.lstrip(".")
         object_key = f"users/{current_user.id}/characters/{char_uuid}/ref_{idx}.{ext}"
         content_type = StorageService.content_type_for(f"file.{ext}")
         await storage.upload_bytes(data, object_key, content_type)

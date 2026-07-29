@@ -16,6 +16,7 @@ GET    /{asset_id}/images/{image_id}/file  – stream an image (capability-token
 """
 import uuid
 import json
+import asyncio
 from datetime import datetime
 from typing import List, Optional
 
@@ -32,6 +33,7 @@ from app.models.user import User
 from app.schemas.response import ResponseBase
 from app.services.storage import get_storage_service, StorageService
 from app.utils.ai_character_parser import view_caption, ai_character_slot_caption, build_description
+from app.utils.image_compress import compress_image_bytes
 
 router = APIRouter()
 
@@ -130,6 +132,10 @@ async def _upload_asset_image(
     user_id: int, project_id: str, asset_id: str, idx: int,
 ) -> str:
     ext = filename.rsplit(".", 1)[-1] if filename and "." in filename else "png"
+    # Shrink oversized refs so the gateway can fetch them over the slow public origin
+    # (else: "Failed to download ... InvalidParameter"). Covers upload + copy call sites.
+    data, norm_ext = await asyncio.to_thread(compress_image_bytes, data, f".{ext}")
+    ext = norm_ext.lstrip(".")
     object_key = storage.project_asset_key(user_id, project_id, asset_id, f"img_{uuid.uuid4().hex}.{ext}")
     content_type = StorageService.content_type_for(f"file.{ext}")
     await storage.upload_bytes(data, object_key, content_type)

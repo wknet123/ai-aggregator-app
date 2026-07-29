@@ -508,6 +508,9 @@ async def upload_asset(
     if asset_type not in ("video", "audio", "image"):
         raise HTTPException(status_code=400, detail="asset_type 必须是 video / audio / image")
 
+    from app.services.storage import StorageService
+    from app.utils.image_compress import compress_image_bytes
+
     contents = await file.read()
     if len(contents) > _ASSET_MAX_BYTES:
         raise HTTPException(status_code=400, detail="文件过大（参考视频/音频上限 50MB）")
@@ -523,6 +526,11 @@ async def upload_asset(
 
     storage = get_storage_service()
     ext = Path(file.filename or "").suffix or {"video": ".mp4", "audio": ".mp3", "image": ".jpg"}[asset_type]
+    if asset_type == "image":
+        # Shrink oversized refs so the gateway can fetch them over the slow public origin
+        # (else: "Failed to download ... InvalidParameter").
+        contents, ext = await asyncio.to_thread(compress_image_bytes, contents, ext)
+        ctype = StorageService.content_type_for(f"f{ext}") or ctype
     filename = f"{uuid.uuid4()}{ext}"
     if asset_type == "audio":
         object_key = storage.drama_audio_key(current_user.id, drama_project_id, filename)
