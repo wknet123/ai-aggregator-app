@@ -61,6 +61,23 @@ export interface HistoryItem {
   created_at?: string
 }
 
+export interface ShareLink {
+  task_id: string
+  exp: number
+  sig: string
+  expires_at: string
+  is_public: boolean
+}
+
+export interface SharedWork {
+  task_id: string
+  task_type: string
+  prompt: string
+  model_id: string
+  result_url: string
+  created_at?: string
+}
+
 /**
  * Build a directly-loadable <img src> URL for a previously-uploaded reference frame.
  * The backend's GET /upload-frame/{id} accepts the JWT via ?token= so the browser can
@@ -71,6 +88,15 @@ export function buildUploadPreviewUrl(fileId?: string | null): string {
   const token = localStorage.getItem('access_token') || ''
   const API_URL = import.meta.env.VITE_API_URL || ''
   return `${API_URL}/api/v1/google/upload-frame/${fileId}?token=${encodeURIComponent(token)}`
+}
+
+/**
+ * Assemble the visitor-facing share URL from a signed link. Points at the
+ * frontend origin so it works regardless of API host. The /share/:taskId route
+ * is public (no auth) and reads exp/sig to fetch the shared work.
+ */
+export function buildShareUrl(taskId: string, exp: number, sig: string): string {
+  return `${window.location.origin}/share/${taskId}?exp=${exp}&sig=${encodeURIComponent(sig)}`
 }
 
 export const googleService = {
@@ -260,5 +286,33 @@ export const googleService = {
       `/api/v1/google/task/${taskId}/public`
     )
     return response.data.data
+  },
+
+  /**
+   * Create a signed, expiring share link for a completed work. Publishes the
+   * work as a side effect (backend sets is_public=1). ttlDays ∈ {1, 7, 10}.
+   */
+  async createShareLink(taskId: string, ttlDays: number): Promise<ShareLink> {
+    const response = await apiClient.post<{ data: ShareLink }>(
+      `/api/v1/google/task/${taskId}/share`,
+      { ttl_days: ttlDays }
+    )
+    return response.data.data
+  },
+
+  /**
+   * Fetch public metadata for a shared work (visitor side, no auth). Uses raw
+   * fetch to bypass apiClient's JWT interceptor / 401 auto-logout — visitors
+   * have no token.
+   */
+  async getSharedWork(taskId: string, exp: string, sig: string): Promise<SharedWork> {
+    const API_URL = import.meta.env.VITE_API_URL || ''
+    const url = `${API_URL}/api/v1/google/share/${taskId}?exp=${encodeURIComponent(exp)}&sig=${encodeURIComponent(sig)}`
+    const res = await fetch(url)
+    if (!res.ok) {
+      throw new Error(`share_unavailable_${res.status}`)
+    }
+    const body = await res.json()
+    return body.data as SharedWork
   }
 }

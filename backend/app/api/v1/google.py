@@ -1,7 +1,7 @@
 """
 Google AI API endpoints
 """
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks, Query, Request
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks, Query, Request, Body
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -17,7 +17,7 @@ from app.services.google_service import GoogleService
 from app.services.storage import get_storage_service, StorageService
 from app.core.credits import InsufficientCreditsError
 from app.core.pricing import max_prompt_chars
-from app.core.asset_url import public_asset_url
+from app.core.asset_url import public_asset_url, sign_asset
 from app.config import Settings
 from app.utils.helpers import get_user_upload_path, get_user_output_path
 from pathlib import Path
@@ -767,7 +767,120 @@ async def toggle_public(
     )
 
 
-@router.get("/discover", response_model=ResponseBase[list])
+# Allowed share-link lifetimes (days). Anything else falls back to the default.
+_SHARE_TTL_DAYS = {1, 7, 10}
+_SHARE_TTL_DEFAULT = 1
+
+
+@router.post("/task/{task_id}/share", response_model=ResponseBase)
+async def create_share_link(
+    task_id: str,
+    payload: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a signed, expiring share link for a completed work (author only).
+
+    Publishes the work (is_public=1) so the public share endpoint will release it,
+    then returns an HMAC-signed exp/sig pair the frontend assembles into a
+    ``/share/{task_id}?exp=&sig=`` URL. The signature is verified on read by
+    ``get_shared_work`` using the same ``sign_asset`` helper.
+    """
+    import time
+    from sqlalchemy import select
+    from app.models.generation_task import GenerationTask
+
+    ttl_days = payload.get("ttl_days", _SHARE_TTL_DEFAULT)
+    try:
+        ttl_days = int(ttl_days)
+    except (TypeError, ValueError):
+        ttl_days = _SHARE_TTL_DEFAULT
+    if ttl_days not in _SHARE_TTL_DAYS:
+        ttl_days = _SHARE_TTL_DEFAULT
+
+    result = await db.execute(
+        select(GenerationTask).where(
+            GenerationTask.task_id == task_id,
+            GenerationTask.user_id == current_user.id,
+            GenerationTask.deleted_at.is_(None)
+        )
+    )
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != "completed" or not task.result_path:
+        raise HTTPException(status_code=400, detail="作品尚未生成完成，无法分享")
+
+    # Publish (idempotent) so the public share endpoint will release it.
+    task.is_public = 1
+    await db.commit()
+
+    exp = int(time.time()) + ttl_days * 86400
+    sig = sign_asset(task_id, exp)
+
+    return ResponseBase(
+        success=True,
+        message="已生成分享链接",
+        data={
+            "task_id": task_id,
+            "exp": exp,
+            "sig": sig,
+            "expires_at": datetime.fromtimestamp(exp).isoformat(),
+            "is_public": True,
+        }
+    )
+
+
+@router.get("/share/{task_id}", response_model=ResponseBase)
+async def get_shared_work(
+    task_id: str,
+    exp: int,
+    sig: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Public (unauthenticated) metadata for a shared work.
+
+    Guarded by the HMAC signature + expiry issued by ``create_share_link`` and by
+    the work still being public. Returns only display-safe fields; the media itself
+    streams from the already-public ``/task/{task_id}/file`` endpoint.
+    """
+    import time
+    import hmac
+    from sqlalchemy import select
+    from app.models.generation_task import GenerationTask
+
+    if exp < int(time.time()):
+        raise HTTPException(status_code=410, detail="分享链接已过期")
+    if not hmac.compare_digest(sig, sign_asset(task_id, exp)):
+        raise HTTPException(status_code=403, detail="分享链接无效")
+
+    result = await db.execute(
+        select(GenerationTask).where(
+            GenerationTask.task_id == task_id,
+            GenerationTask.deleted_at.is_(None)
+        )
+    )
+    task = result.scalar_one_or_none()
+
+    if not task or task.status != "completed" or task.is_public != 1:
+        raise HTTPException(status_code=404, detail="作品不存在或已取消分享")
+
+    return ResponseBase(
+        success=True,
+        message="Shared work retrieved",
+        data={
+            "task_id": task.task_id,
+            "task_type": task.task_type,
+            "prompt": task.prompt,
+            "model_id": task.model_id,
+            "result_url": f"/api/v1/google/task/{task.task_id}/file",
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+        }
+    )
+
+
+
 async def get_public_works(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

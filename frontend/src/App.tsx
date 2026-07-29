@@ -12,6 +12,7 @@ import Models from './pages/Models'
 import Settings from './pages/Settings'
 import AIWorkbench from './pages/AIWorkbench'
 import AIEffects from './pages/AIEffects'
+import SharePage from './pages/SharePage'
 import VideoStudio from './pages/VideoStudio'
 import MotionImitation from './pages/MotionImitation'
 import Vid2Vid from './pages/Vid2Vid'
@@ -65,6 +66,7 @@ function App() {
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/login" element={isAuthenticated ? <Navigate to="/gallery" /> : <Login />} />
         <Route path="/register" element={isAuthenticated ? <Navigate to="/gallery" /> : <Register />} />
+        <Route path="/share/:taskId" element={<SharePage />} />
         
         <Route
           path="/gallery"

@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import Header from '../components/layout/Header'
 import Sidebar from '../components/layout/Sidebar'
-import { googleService } from '../services/google.service'
+import { googleService, buildShareUrl } from '../services/google.service'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { Download, X, Star, Trash2, Play, Heart, ChevronDown, ImageIcon, Video, LayoutGrid, Sparkles, Globe, Lock } from 'lucide-react'
+import { Download, X, Star, Trash2, Play, Heart, ChevronDown, ImageIcon, Video, LayoutGrid, Sparkles, Globe, Lock, Share2, Copy, Check } from 'lucide-react'
 import { SHOWCASE_ROW1, SHOWCASE_ROW2, ShowcaseItem } from '../data/showcase'
 
 const SHOWCASE_ITEMS: ShowcaseItem[] = [...SHOWCASE_ROW1, ...SHOWCASE_ROW2]
@@ -69,6 +69,13 @@ export default function Gallery() {
   const [loading, setLoading] = useState(true)
   const [selectedItem, setSelectedItem] = useState<GalleryItem | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Share-link flow: shareItem opens the TTL picker; shareResult holds the
+  // generated url + expiry after creation (also used for the copied toast).
+  const [shareItem, setShareItem] = useState<GalleryItem | null>(null)
+  const [shareTtl, setShareTtl] = useState(1)
+  const [shareResult, setShareResult] = useState<{ url: string; expiresAt: string } | null>(null)
+  const [shareLoading, setShareLoading] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
 
   useEffect(() => {
     loadGallery()
@@ -176,6 +183,64 @@ export default function Gallery() {
     } catch (err) {
       console.error('Failed to toggle public:', err)
       alert('操作失败，请重试')
+    }
+  }
+
+  const TTL_OPTIONS = [
+    { days: 1, label: '1 天' },
+    { days: 7, label: '1 周' },
+    { days: 10, label: '10 天' },
+  ]
+
+  const openShareModal = (item: GalleryItem) => {
+    setShareResult(null)
+    setShareCopied(false)
+    setShareTtl(1)
+    setShareItem(item)
+  }
+
+  const closeShareModal = () => {
+    setShareItem(null)
+    setShareResult(null)
+    setShareCopied(false)
+  }
+
+  const markPublicLocally = (taskId: string) => {
+    setItems(prev => prev.map(it => it.task_id === taskId ? { ...it, is_public: true } : it))
+    setSelectedItem(prev => prev?.task_id === taskId ? { ...prev, is_public: true } : prev)
+  }
+
+  const handleCreateShareLink = async () => {
+    if (!shareItem) return
+    setShareLoading(true)
+    try {
+      const link = await googleService.createShareLink(shareItem.task_id, shareTtl)
+      const url = buildShareUrl(link.task_id, link.exp, link.sig)
+      // Creating a share link publishes the work — reflect that in the UI.
+      markPublicLocally(shareItem.task_id)
+      setShareResult({ url, expiresAt: link.expires_at })
+      try {
+        await navigator.clipboard.writeText(url)
+        setShareCopied(true)
+      } catch {
+        // clipboard blocked (e.g. non-secure context) — url stays visible for manual copy
+        setShareCopied(false)
+      }
+    } catch (err) {
+      console.error('Failed to create share link:', err)
+      alert('生成分享链接失败，请重试')
+    } finally {
+      setShareLoading(false)
+    }
+  }
+
+  const handleCopyShareUrl = async () => {
+    if (!shareResult) return
+    try {
+      await navigator.clipboard.writeText(shareResult.url)
+      setShareCopied(true)
+    } catch {
+      setShareCopied(false)
     }
   }
 
@@ -511,6 +576,13 @@ export default function Gallery() {
                 <Download className="w-5 h-5 text-gray-300" />
               </button>
               <button
+                onClick={() => openShareModal(selectedItem)}
+                className="w-10 h-10 md:w-11 md:h-11 flex items-center justify-center bg-[#1a1a1f] hover:bg-[#252530] rounded-full transition-all shadow-lg border border-gray-700/50"
+                title="获取分享链接"
+              >
+                <Share2 className="w-5 h-5 text-gray-300" />
+              </button>
+              <button
                 onClick={() => { handleDelete(selectedItem.task_id); setSelectedItem(null); }}
                 className="w-10 h-10 md:w-11 md:h-11 flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 rounded-full transition-all shadow-lg border border-red-500/50"
                 title="删除"
@@ -572,6 +644,13 @@ export default function Gallery() {
                 <Download className="w-5 h-5 text-gray-300" />
               </button>
               <button
+                onClick={() => openShareModal(selectedItem)}
+                className="w-10 h-10 md:w-11 md:h-11 flex items-center justify-center bg-[#1a1a1f] hover:bg-[#252530] rounded-full transition-all shadow-lg border border-gray-700/50"
+                title="获取分享链接"
+              >
+                <Share2 className="w-5 h-5 text-gray-300" />
+              </button>
+              <button
                 onClick={() => { handleDelete(selectedItem.task_id); setSelectedItem(null); }}
                 className="w-10 h-10 md:w-11 md:h-11 flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 rounded-full transition-all shadow-lg border border-red-500/50"
                 title="删除"
@@ -600,6 +679,87 @@ export default function Gallery() {
             
             {/* Decorative glow effect */}
             <div className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-pink-500 rounded-2xl opacity-10 blur-xl -z-10 pointer-events-none" style={{top: '50px'}}></div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Link Modal */}
+      {shareItem && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={closeShareModal}
+        >
+          <div
+            className="relative w-full max-w-md bg-[#1a1a1f] rounded-2xl border border-gray-800/60 shadow-2xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={closeShareModal}
+              className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2 mb-1">
+              <Share2 className="w-5 h-5 text-pink-400" />
+              <h3 className="text-white font-semibold text-lg">分享作品</h3>
+            </div>
+            <p className="text-gray-500 text-sm mb-5">生成分享链接后，作品将公开，任何人可通过链接查看。</p>
+
+            {!shareResult ? (
+              <>
+                <div className="mb-2 text-sm text-gray-400">链接有效期</div>
+                <div className="flex gap-2 mb-6">
+                  {TTL_OPTIONS.map(opt => (
+                    <button
+                      key={opt.days}
+                      onClick={() => setShareTtl(opt.days)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all border ${
+                        shareTtl === opt.days
+                          ? 'bg-pink-500/20 border-pink-500/60 text-pink-300'
+                          : 'bg-[#0f0f14] border-gray-700/50 text-gray-400 hover:border-gray-600'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={handleCreateShareLink}
+                  disabled={shareLoading}
+                  className="w-full py-2.5 rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white font-medium transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {shareLoading ? (
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Share2 className="w-4 h-4" />
+                  )}
+                  生成分享链接
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 rounded-lg bg-[#0f0f14] border border-gray-700/50 px-3 py-2.5 mb-3">
+                  <input
+                    readOnly
+                    value={shareResult.url}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 bg-transparent text-sm text-gray-300 outline-none truncate"
+                  />
+                  <button
+                    onClick={handleCopyShareUrl}
+                    className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 text-xs transition-all"
+                  >
+                    {shareCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {shareCopied ? '已复制' : '复制'}
+                  </button>
+                </div>
+                <p className="text-gray-500 text-xs">
+                  {shareCopied ? '链接已复制到剪贴板。' : '请手动复制上方链接。'}
+                  有效期至 {new Date(shareResult.expiresAt).toLocaleString()}
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}
