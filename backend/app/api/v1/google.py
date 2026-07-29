@@ -880,7 +880,7 @@ async def get_shared_work(
     )
 
 
-
+@router.get("/discover", response_model=ResponseBase[list])
 async def get_public_works(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
