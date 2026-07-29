@@ -6,7 +6,7 @@ ALL model calls in the platform route through this single client:
   - image gen/edit  → generate_image() (wan2.7-image / -pro, t2i + i2i)
   - video           → 3 task families, each with its own create + poll:
         Hailuo (海螺)   → minimax video_generation
-        HappyHorse      → /videos (multipart form; input_reference = comma-joined URLs)
+        HappyHorse      → /videos (JSON body; input_reference = comma-joined URLs)
         Seedance (短剧) → /contents/generations/tasks
 
 Image inputs are delivered to the gateway as base64 data URLs (MinIO is internal
@@ -147,13 +147,6 @@ class GatewayClient:
         if not self.api_key:
             raise GatewayError("AI_GATEWAY_API_KEY 未配置")
 
-    @property
-    def _auth_headers(self) -> Dict[str, str]:
-        """Authorization only — no Content-Type, so httpx sets the correct
-        ``multipart/form-data; boundary=...`` when posting ``files=`` (HappyHorse).
-        """
-        return {"Authorization": f"Bearer {self.api_key}"}
-
     @staticmethod
     def _check(resp: httpx.Response, what: str) -> None:
         """Raise a GatewayError carrying the upstream body on a non-2xx response.
@@ -181,9 +174,12 @@ class GatewayClient:
         likewise retried. A genuine bad-parameter 400 (e.g. InvalidParameter /
         MissingParameter) is surfaced immediately with the upstream body.
 
-        JSON body — used by Seedance / Kling / Hailuo (which unmarshal into typed
-        structs). HappyHorse ``/videos`` is multipart instead; see
-        :meth:`_post_form_task`.
+        JSON body — every gateway task-create call (HappyHorse / Seedance / Kling /
+        Hailuo) uses JSON. The gateway unmarshals into typed Go structs (e.g.
+        HappyHorse ``duration`` is an ``int``), so multipart/form-data — where every
+        field is a string — is rejected with ``json: cannot unmarshal string into ...
+        duration of type int``, despite the HappyHorse doc's ``--form`` examples
+        (those describe the raw upstream API, not this aggregator gateway).
         """
         delays = [3, 8, 15][: max(0, retries)]
         if settings.LOG_MODEL_REQUESTS:
@@ -215,53 +211,6 @@ class GatewayClient:
                 logger.warning(
                     "%s gateway error %s: %s | request body=%s",
                     what, resp.status_code, body[:300], _loggable_payload(payload),
-                )
-                raise GatewayError(_extract_error_message(body) or f"{what} failed: {resp.status_code}")
-        raise GatewayError(f"{what} failed: exhausted retries")
-
-    async def _post_form_task(
-        self, url: str, fields: Dict[str, Any], what: str,
-        *, timeout: float = 60.0, retries: int = 2,
-    ) -> Dict[str, Any]:
-        """POST a task-create request as ``multipart/form-data`` (HappyHorse /videos).
-
-        Per the HappyHorse doc (neolink.com/docs/instruction-manual/video/02-happyhorse),
-        every ``/v1/videos`` mode (t2v / i2v / r2v / edit) is submitted with ``--form``
-        fields — NOT a JSON body. All fields are sent as string form parts (the
-        ``files={"k": (None, v)}`` idiom, which httpx encodes as plain multipart
-        fields with no filename). Retry semantics mirror :meth:`_post_task`
-        (transient ``fail_to_fetch_task`` / 429 / 5xx are retried with backoff).
-        """
-        # httpx multipart: (filename=None, value) → a plain form field, value stringified.
-        files = {k: (None, str(v)) for k, v in fields.items() if v is not None}
-        delays = [3, 8, 15][: max(0, retries)]
-        if settings.LOG_MODEL_REQUESTS:
-            logger.info("%s → POST %s (multipart) form=%s", what, url, _loggable_payload(fields))
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            for attempt, delay in enumerate(delays + [None], start=1):
-                resp = await client.post(url, headers=self._auth_headers, files=files)
-                if resp.is_success:
-                    return resp.json()
-                body = resp.text[:500]
-                low = body.lower()
-                transient = (
-                    resp.status_code >= 500
-                    or resp.status_code == 429
-                    or "fail_to_fetch_task" in low
-                )
-                if transient and delay is not None:
-                    logger.warning(
-                        "%s transient gateway error %s (attempt %d), retry in %ds: %s",
-                        what, resp.status_code, attempt, delay, body[:200],
-                    )
-                    await asyncio.sleep(delay)
-                    continue
-                # Non-transient failure (bad params, moderation/privacy block, etc.):
-                # re-log the form alongside the rejection so the offending field is
-                # visible in one place (e.g. HappyHorse "Invalid Parameter").
-                logger.warning(
-                    "%s gateway error %s: %s | request form=%s",
-                    what, resp.status_code, body[:300], _loggable_payload(fields),
                 )
                 raise GatewayError(_extract_error_message(body) or f"{what} failed: {resp.status_code}")
         raise GatewayError(f"{what} failed: exhausted retries")
@@ -477,7 +426,7 @@ class GatewayClient:
             raise GatewayError(f"hailuo: no task_id: {json.dumps(data)[:300]}")
         return task_id
 
-    # ── video: HappyHorse (multipart /videos) ───────────────────────────────────
+    # ── video: HappyHorse (JSON /videos) ─────────────────────────────────────────
     async def happyhorse_create(
         self,
         prompt: str,
@@ -492,10 +441,13 @@ class GatewayClient:
     ) -> str:
         """Create a HappyHorse video task → task_id.
 
-        ``POST /v1/videos`` is submitted as **multipart/form-data** for every mode
-        (t2v / i2v / r2v), matching the HappyHorse doc's ``--form`` / ``files=``
-        examples (neolink.com/docs/instruction-manual/video/02-happyhorse). Fields
-        are sent as form parts; ``duration`` goes as its string form value.
+        NOTE: the HappyHorse doc shows ``--form`` / ``files=`` (multipart) examples,
+        but those describe the *raw* HappyHorse API. We call it through the aggregator
+        gateway (neolink.com/api/v1, OpenAI-compatible "New API"), which re-serializes
+        into a **typed JSON struct** where ``duration`` is a Go ``int``. Sending
+        multipart makes every field a string and the gateway rejects it with
+        ``json: cannot unmarshal string into ... duration of type int``. So this MUST
+        be a JSON body with an integer ``duration`` (verified at runtime, 2026-07-29).
 
         Reference frames (i2v / r2v) go in a single ``input_reference`` field as a
         **comma-separated** list of fetchable URLs — image order maps to
@@ -507,7 +459,7 @@ class GatewayClient:
         """
         self._require_key()
         model = f"{settings.GATEWAY_VIDEO_HAPPYHORSE}-{mode}-{resolution}"
-        fields: Dict[str, Any] = {
+        payload: Dict[str, Any] = {
             "model": model,
             "prompt": prompt,
             "duration": int(duration),
@@ -534,9 +486,9 @@ class GatewayClient:
                 )
             if len(refs) > 1:
                 logger.info("happyhorse %s: %d reference images", mode, len(refs))
-            fields["input_reference"] = ",".join(refs)
-        data = await self._post_form_task(
-            f"{self.base_url}/videos", fields, "happyhorse video", timeout=timeout,
+            payload["input_reference"] = ",".join(refs)
+        data = await self._post_task(
+            f"{self.base_url}/videos", payload, "happyhorse video", timeout=timeout,
         )
         task_id = data.get("id") or data.get("task_id")
         if not task_id:
@@ -947,10 +899,10 @@ class GatewayClient:
         """视频编辑创建任务 → task_id。
 
         按 HappyHorse 文档(https://neolink.com/docs/instruction-manual/video/02-happyhorse):
-        走 ``POST /v1/videos``(**multipart/form-data**,与 t2v/i2v/r2v 一致),
-        ``input_reference`` = 输入视频,``prompt`` = 编辑指令,
+        走 ``POST /v1/videos``,``input_reference`` = 输入视频,``prompt`` = 编辑指令,
         ``model`` = ``happyhorse-1.0-edit-{res}``。轮询用 :meth:`video_poll`。
-        优先用公网视频 URL(input_reference 接 URL 字符串);无 URL 时回退 base64 内联。
+        与 happyhorse_create 一致走 **JSON** 体(经聚合网关下发,typed struct;multipart
+        会因 duration 等字段被当字符串而报 unmarshal 错)。优先公网视频 URL,回退 base64 内联。
         """
         self._require_key()
         model = model or settings.GATEWAY_VIDEO_EDIT_MODEL
@@ -962,13 +914,13 @@ class GatewayClient:
             input_ref = _as_data_url(video_bytes, "video/mp4")
         else:
             raise GatewayError("视频编辑缺少输入视频 (video_url / video_bytes)")
-        fields: Dict[str, Any] = {
+        payload: Dict[str, Any] = {
             "model": model,
             "prompt": prompt,
             "input_reference": input_ref,
         }
-        data = await self._post_form_task(
-            f"{self.base_url}/videos", fields, "video_edit", timeout=timeout,
+        data = await self._post_task(
+            f"{self.base_url}/videos", payload, "video_edit", timeout=timeout,
         )
         task_id = data.get("id") or data.get("task_id")
         if not task_id:
