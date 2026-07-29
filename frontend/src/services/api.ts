@@ -35,7 +35,23 @@ class ApiClient {
 
     // Response interceptor
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        // Event-driven balance: the backend stamps the tenant's current credit
+        // balance onto every authenticated JSON response (X-Credit-Balance). Push
+        // it into the store so the UI reflects real credit movement without any
+        // dedicated balance polling. Dynamic import avoids a circular dependency
+        // (store → service → this module).
+        const raw = response.headers?.['x-credit-balance']
+        if (raw !== undefined) {
+          const balance = Number(raw)
+          if (!Number.isNaN(balance)) {
+            import('../store/credit.store').then(({ useCreditStore }) => {
+              useCreditStore.getState().setBalance(balance)
+            })
+          }
+        }
+        return response
+      },
       async (error: AxiosError) => {
         const original = error.config as (AxiosError['config'] & { _retry?: boolean }) | undefined
 

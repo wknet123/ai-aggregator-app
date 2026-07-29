@@ -1,12 +1,8 @@
 import { useEffect } from 'react'
 import { useAuthStore } from '../../store/auth.store'
 import { useCreditStore } from '../../store/credit.store'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Menu, Rocket, Gem } from 'lucide-react'
-
-// 余额定时轮询间隔(ms)。积分扣减在后台任务中异步发生,
-// 用户停留同一页面时需要定时刷新,否则右上角会显示陈旧余额。
-const BALANCE_POLL_INTERVAL = 20000
 
 interface HeaderProps {
   onMenuToggle?: () => void
@@ -17,33 +13,13 @@ export default function Header({ onMenuToggle }: HeaderProps) {
   const { balance: rawBalance, fetchBalance } = useCreditStore()
   const balance = typeof rawBalance === 'number' ? rawBalance : parseFloat(String(rawBalance)) || 0
   const navigate = useNavigate()
-  const location = useLocation()
 
-  // 路由切换时刷新余额(覆盖页面跳转后扣分的场景)
+  // 余额改为事件驱动:后端在每个已认证 JSON 响应上回传 X-Credit-Balance 头,
+  // axios 拦截器写入 store,积分实际变动(扣减/退款/充值)时即时刷新,无需轮询。
+  // 这里仅在登录后拉取一次作为初始值(用户首屏若无其它请求也能显示余额)。
   useEffect(() => {
     if (user) {
       fetchBalance()
-    }
-  }, [user, fetchBalance, location.pathname])
-
-  // 定时轮询 + 窗口重新聚焦/可见时刷新,确保后台异步扣分后右上角余额保持最新
-  useEffect(() => {
-    if (!user) return
-
-    const timer = window.setInterval(fetchBalance, BALANCE_POLL_INTERVAL)
-
-    const refreshOnVisible = () => {
-      if (document.visibilityState === 'visible') {
-        fetchBalance()
-      }
-    }
-    window.addEventListener('focus', fetchBalance)
-    document.addEventListener('visibilitychange', refreshOnVisible)
-
-    return () => {
-      window.clearInterval(timer)
-      window.removeEventListener('focus', fetchBalance)
-      document.removeEventListener('visibilitychange', refreshOnVisible)
     }
   }, [user, fetchBalance])
 

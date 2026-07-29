@@ -11,6 +11,7 @@ from pathlib import Path
 from app.config import settings
 from app.api.v1 import auth, users, tenants, credits, models, openai, google, flux, workflows, payment, douyin, suggestions, storage, drama, drama_projects, static_media, characters, render_pipeline, media_studio, project_assets, ai_characters, agents, admin_gateway
 from app.middleware.tenant_context import TenantContextMiddleware
+from app.middleware.credit_balance import CreditBalanceMiddleware
 from app.middleware.logging import LoggingMiddleware
 from app.middleware.error_handler import error_handler_middleware
 from app.db.session import engine
@@ -313,6 +314,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Expose the credit-balance header so the browser (dev cross-origin) can read it.
+    expose_headers=["X-Credit-Balance"],
 )
 
 # Gzip Compression
@@ -320,6 +323,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Custom Middlewares
 app.add_middleware(TenantContextMiddleware)
+app.add_middleware(CreditBalanceMiddleware)
 app.add_middleware(LoggingMiddleware)
 app.middleware("http")(error_handler_middleware)
 
