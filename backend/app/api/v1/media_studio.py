@@ -50,6 +50,7 @@ from app.schemas.response import ResponseBase
 from app.schemas.file import FileUploadResponse, GenerationTaskResponse
 from app.services.storage import StorageService, get_storage_service
 from app.utils.helpers import get_user_output_path, get_user_upload_path
+from app.utils.image_compress import compress_image_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -173,50 +174,6 @@ class VideoEditRequest(BaseModel):
 # ── 通用辅助 ─────────────────────────────────────────────────────────────────
 _IMG_EXTS = [".jpg", ".jpeg", ".png", ".webp"]
 _VIDEO_EXTS = [".mp4", ".mov", ".webm", ".avi"]
-
-
-_MAX_IMG_DIM = 1600   # px, longest side; refs beyond this add no quality for gen models
-_JPEG_QUALITY = 85
-
-
-def _compress_image(contents: bytes, ext: str):
-    """Downscale + re-encode an oversized reference image so external gateways can
-    fetch it within their download timeout.
-
-    A 1.5MB+ reference over a slow public origin (~20KB/s) exceeds the gateway's
-    download window and surfaces as ``Failed to download ... InvalidParameter``.
-    Returns ``(bytes, ext)``; falls back to the original on any failure or when
-    re-encoding doesn't shrink the file.
-    """
-    try:
-        from io import BytesIO
-        from PIL import Image, ImageOps
-
-        img = Image.open(BytesIO(contents))
-        img = ImageOps.exif_transpose(img)  # honor orientation before EXIF is dropped
-        has_alpha = img.mode in ("RGBA", "LA") or (
-            img.mode == "P" and "transparency" in img.info
-        )
-
-        w, h = img.size
-        scale = _MAX_IMG_DIM / max(w, h)
-        if scale < 1:
-            img = img.resize((round(w * scale), round(h * scale)), Image.LANCZOS)
-
-        buf = BytesIO()
-        if has_alpha:
-            img.convert("RGBA").save(buf, format="PNG", optimize=True)
-            new_ext = ".png"
-        else:
-            img.convert("RGB").save(buf, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
-            new_ext = ".jpg"
-        out = buf.getvalue()
-        if len(out) < len(contents):
-            logger.info("studio: compressed ref image %d→%d bytes", len(contents), len(out))
-            return out, new_ext
-    except Exception as e:  # noqa: BLE001
-        logger.warning("studio: image compress failed, using original: %s", e)
-    return contents, ext
 
 
 def _resolve_upload(user_id: int, file_id: str):
@@ -497,7 +454,7 @@ async def upload_media(
 
     contents = await file.read()
     if ext in _IMG_EXTS:
-        contents, ext = await asyncio.to_thread(_compress_image, contents, ext)
+        contents, ext = await asyncio.to_thread(compress_image_bytes, contents, ext)
     file_id = str(uuid.uuid4())
     upload_path = get_user_upload_path(settings.STORAGE_BASE_PATH, current_user.id)
     local_path = upload_path / f"{file_id}{ext}"

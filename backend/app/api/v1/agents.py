@@ -349,6 +349,12 @@ async def upload_run_input(
     ext = (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "png"
     if ext not in ("png", "jpg", "jpeg", "webp", "gif", "bmp"):
         ext = "png"
+    # Shrink oversized refs so the gateway can fetch them over the slow public origin.
+    if ext != "gif":  # keep animated GIFs intact
+        import asyncio as _asyncio
+        from app.utils.image_compress import compress_image_bytes
+        data, _new_ext = await _asyncio.to_thread(compress_image_bytes, data, f".{ext}")
+        ext = _new_ext.lstrip(".")
     filename = f"agent-inputs/{uuid.uuid4().hex}.{ext}"
     key = get_storage_service().user_upload_key(current_user.id, filename)
     ct = StorageService.content_type_for(filename) or content_type or "image/png"

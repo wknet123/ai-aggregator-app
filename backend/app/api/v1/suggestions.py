@@ -84,6 +84,29 @@ def _write_cache(key: str, prompts: list, ts: float) -> None:
         logger.warning(f"Cache write failed: {e}")
 
 
+def _extract_json(raw: str) -> str:
+    """Return the JSON payload from a model reply, tolerating markdown fences.
+
+    Gateway text models honor ``response_format=json_object`` only intermittently;
+    they sometimes wrap the object in a ```json … ``` fence or return an empty
+    string. Both would make ``json.loads`` fail with "Expecting value ... char 0".
+    Strip a leading/trailing code fence and fall back to the first ``{…}`` slice.
+    """
+    s = (raw or "").strip()
+    if s.startswith("```"):
+        s = s[3:]
+        if s[:4].lower() == "json":
+            s = s[4:]
+        s = s.strip()
+        if s.endswith("```"):
+            s = s[:-3].strip()
+    if not s.startswith("{"):
+        start, end = s.find("{"), s.rfind("}")
+        if start != -1 and end > start:
+            s = s[start : end + 1]
+    return s
+
+
 def _random_fallback(category: str) -> list[dict]:
     return random.sample(FALLBACK_POOL[category], 4)
 
@@ -140,7 +163,7 @@ async def get_quick_prompts(
             json_mode=True,
             timeout=15.0,
         )
-        content = json.loads(raw)
+        content = json.loads(_extract_json(raw))
         if isinstance(content, list):
             content = content[0]
         prompts = content["prompts"]
@@ -158,6 +181,10 @@ async def get_quick_prompts(
         _write_cache(cache_key, prompts, now)
         return QuickPromptsResponse(prompts=prompts, source="ai")
 
+    except (json.JSONDecodeError, KeyError, ValueError) as exc:
+        # Model returned empty / non-JSON / wrong shape — expected flakiness, not an error.
+        logger.info("Quick-prompts fallback (%s): unparseable model reply: %s", category, exc)
+        return QuickPromptsResponse(prompts=_random_fallback(category), source="fallback")
     except Exception as exc:
         logger.warning("Quick-prompts generation failed (%s): %s", category, exc)
         # Always return a fresh random sample so the user sees variety

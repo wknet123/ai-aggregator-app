@@ -20,10 +20,12 @@ from app.core.pricing import max_prompt_chars
 from app.core.asset_url import public_asset_url, sign_asset
 from app.config import Settings
 from app.utils.helpers import get_user_upload_path, get_user_output_path
+from app.utils.image_compress import compress_image_bytes
 from pathlib import Path
 import uuid
 import json
 import aiofiles
+import asyncio
 import logging
 from datetime import datetime
 
@@ -72,10 +74,15 @@ async def upload_first_frame(
     contents = await file.read()
     if len(contents) > settings.MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=400, detail="File size exceeds maximum limit (10MB)")
-    
+
     # Generate unique file ID and save
     file_id = str(uuid.uuid4())
-    file_extension = Path(file.filename).suffix
+    file_extension = Path(file.filename).suffix.lower()
+    # Downscale/re-encode oversized frames so the slow public origin can serve them to
+    # the gateway within its download window (else: "Failed to download ... InvalidParameter").
+    contents, file_extension = await asyncio.to_thread(
+        compress_image_bytes, contents, file_extension or ".jpg"
+    )
     upload_path = get_user_upload_path(settings.STORAGE_BASE_PATH, current_user.id)
     file_path = upload_path / f"{file_id}{file_extension}"
 
