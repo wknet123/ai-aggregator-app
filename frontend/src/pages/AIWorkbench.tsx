@@ -4,7 +4,7 @@ import Header from '../components/layout/Header'
 import Sidebar from '../components/layout/Sidebar'
 import CompactConfigBar from '../components/model/CompactConfigBar'
 import ImageUploader, { UploadedImage } from '../components/model/ImageUploader'
-import { CATEGORIES, getModelsByCategory } from '../config/models.config'
+import { CATEGORIES, getModelsByCategory, getModelById } from '../config/models.config'
 import { calculateCost } from '../config/models.config'
 import type { ModelCategory } from '../types/model.types'
 import { useCreditStore } from '../store/credit.store'
@@ -46,6 +46,22 @@ interface ChatMessage {
   model_id?: string
   parameters?: any
   prompt?: string  // originating prompt, mirrored onto the assistant bubble so refill is self-contained
+  businessLabel?: string  // human-readable generation business name, e.g. "图生视频 · HappyHorse 1.0"
+}
+
+// Map a generation to its business name: sub-type (文生图/图生图/文生视频/图生视频) + model
+// display name. task_type distinguishes image vs video; generation_mode carries the sub-type.
+function businessLabel(taskType: string | undefined, params: any, modelId?: string): string {
+  const mode = params?.generation_mode
+  const isVideo = taskType === 'video'
+  let sub: string
+  if (isVideo) {
+    sub = mode === 'image-to-video' ? '图生视频' : '文生视频'
+  } else {
+    sub = mode === 'image-to-image' ? '图生图' : '文生图'
+  }
+  const modelName = (modelId && getModelById(modelId)?.name) || modelId
+  return modelName ? `${sub} · ${modelName}` : sub
 }
 
 // Rebuild a chat thread from history items (newest-first from the API). Each item
@@ -76,6 +92,7 @@ function buildChatFromHistory(items: HistoryItem[]): ChatMessage[] {
       model_id: item.model_id,
       parameters: item.parameters || {},
       prompt: item.prompt,
+      businessLabel: businessLabel(item.task_type, item.parameters, item.model_id),
     })
   }
   return messages
@@ -352,6 +369,7 @@ export default function AIWorkbench() {
                       model_id: selectedModelId,
                       parameters: refillParams,
                       prompt: currentPrompt,
+                      businessLabel: businessLabel('image', refillParams, selectedModelId),
                     }
                   : msg
               ))
@@ -435,6 +453,7 @@ export default function AIWorkbench() {
                       model_id: selectedModelId,
                       parameters: refillParams,
                       prompt: currentPrompt,
+                      businessLabel: businessLabel('video', refillParams, selectedModelId),
                     }
                   : msg
               ))
@@ -533,10 +552,24 @@ export default function AIWorkbench() {
       setVideoSubType(mode === 'image-to-video' ? 'image-to-video' : 'text-to-video')
     }
 
-    // Restore reference images from captured file ids → previewable UploadedImage slots.
-    const ids: string[] = selectedCategory === 'image'
-      ? [p.reference_image_id].filter(Boolean)
-      : [p.first_frame_id, p.second_frame_id, p.third_frame_id].filter(Boolean)
+    // Restore reference images. Prefer the client file ids captured on newer tasks;
+    // fall back to the basename of the server-resolved paths (`*_frame_path` /
+    // `reference_image_path`, which end in `{file_id}{ext}`) so older tasks — and any
+    // where the *_id wasn't persisted — still restore their reference previews.
+    const fileIdFromPath = (path?: string | null): string | null => {
+      if (!path) return null
+      const base = String(path).split(/[\\/]/).pop() || ''
+      const stem = base.replace(/\.[^.]+$/, '')  // strip extension
+      return stem || null
+    }
+    const ids: string[] = (selectedCategory === 'image'
+      ? [p.reference_image_id || fileIdFromPath(p.reference_image_path)]
+      : [
+          p.first_frame_id || fileIdFromPath(p.first_frame_path),
+          p.second_frame_id || fileIdFromPath(p.second_frame_path),
+          p.third_frame_id || fileIdFromPath(p.third_frame_path),
+        ]
+    ).filter((v): v is string => Boolean(v))
     const restored: UploadedImage[] = ids.map((fileId) => ({
       id: `refill-${fileId}`,
       previewUrl: buildUploadPreviewUrl(fileId),
@@ -1112,6 +1145,13 @@ export default function AIWorkbench() {
                           : 'bg-[#1a1a1f] border border-gray-800/50 shadow-sm'
                       }`}
                     >
+                      {/* Business name: which generation service this turn used */}
+                      {msg.type === 'assistant' && msg.businessLabel && (
+                        <div className="inline-flex items-center gap-1 mb-1.5 px-2 py-0.5 rounded-md bg-pink-500/10 border border-pink-500/20 text-[11px] text-pink-300">
+                          <Sparkles className="w-3 h-3" />
+                          {msg.businessLabel}
+                        </div>
+                      )}
                       <p className={`text-sm ${msg.type === 'user' ? 'text-white' : 'text-gray-300'}`}>
                         {msg.content}
                       </p>
